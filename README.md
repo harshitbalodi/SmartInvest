@@ -1,4 +1,4 @@
-# My Fullstack App
+# SmartInvest
 
 ## Overview
 This project is a fullstack application that consists of a backend built with Python and a frontend built with React. The backend handles API requests and data management, while the frontend provides a user interface for interacting with the application.
