@@ -1,0 +1,2306 @@
+================================================================================
+                         INVESTIQ — SYSTEM DESIGN DOCUMENT
+                              Version 1.0 | March 2026
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1.  Product Vision & Overview
+2.  Core Modules
+3.  Functional Requirements
+4.  Non-Functional Requirements
+5.  Technology Stack & Justification
+6.  AI Provider Strategy
+7.  Data Sources (Free/Low Cost)
+8.  System Architecture
+9.  Data Architecture (Database Schema)
+10. Redis Cache Schema
+11. API Design (All Endpoints)
+12. Mutual Fund Advisory Module
+13. Stock Scoring & Ranking Engine
+14. Backtesting Engine
+15. Caching Strategy (Multi-Layer)
+16. Request Coalescing Pattern
+17. Nightly ETL Pipeline
+18. Auth Architecture
+19. Frontend Pages & Components (For Figma)
+20. Phased Delivery Plan
+21. Risks & Mitigation
+22. Design Decision Log (Interview Ready)
+
+================================================================================
+1. PRODUCT VISION & OVERVIEW
+================================================================================
+
+InvestIQ is an AI-powered investment advisory platform for the Indian market.
+
+Target User: Indian retail investors (ages 20-60) who want data-driven 
+investment guidance without paying for expensive advisory services.
+
+What InvestIQ Does:
+  - Personalized asset allocation advice based on user profile (age, goals, risk)
+  - Smart stock screener with 15+ fundamental filters
+  - Curated portfolio strategies (10-baggers, dividend kings, compounders)
+  - Mutual fund recommendations (active vs passive management)
+  - Historical backtesting of strategies with benchmark comparison
+
+What InvestIQ Does NOT Do:
+  - Execute trades (information only)
+  - Guarantee returns (educational tool)
+  - Replace SEBI-registered advisors (always show disclaimers)
+
+================================================================================
+2. CORE MODULES
+================================================================================
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  MODULE 1: Personal Investment Advisor                               │
+│  → Age-based, goal-based asset allocation advice                     │
+│  → AI-generated recommendations in plain English                     │
+│  → Market-condition-adjusted suggestions                             │
+│                                                                      │
+│  MODULE 2: Smart Stock Screener                                      │
+│  → Filter stocks by 15+ fundamentals (PE, ROE, EPS growth, etc.)    │
+│  → Sector filtering, composite scoring, ranked results               │
+│                                                                      │
+│  MODULE 3: Curated Portfolio Strategies                              │
+│  → Pre-built strategies: Ten Baggers, Steady Compounders,            │
+│    Dividend Kings, GARP, Turnaround Plays                            │
+│  → Each shows top 10-15 scored & ranked stocks                       │
+│                                                                      │
+│  MODULE 4: Mutual Fund Advisory                                      │
+│  → Active vs Passive preference                                      │
+│  → Category-wise MF recommendations                                  │
+│  → Fund comparison, overlap analysis                                 │
+│  → Direct vs Regular cost comparison                                 │
+│                                                                      │
+│  MODULE 5: Backtesting Engine                                        │
+│  → Historical strategy simulation                                    │
+│  → CAGR, Sharpe ratio, max drawdown metrics                         │
+│  → Benchmark comparison (vs Nifty 50)                                │
+└──────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+3. FUNCTIONAL REQUIREMENTS
+================================================================================
+
+FR-01: USER MANAGEMENT
+──────────────────────
+FR-01.1  [P0] User registration with email/password
+FR-01.2  [P0] Google OAuth login
+FR-01.3  [P0] JWT-based session with access + refresh tokens
+FR-01.4  [P0] User profile (age, income, goals, risk tolerance)
+FR-01.5  [P1] Risk profiling questionnaire (10-15 questions)
+FR-01.6  [P1] Management style preference (active/passive/hybrid)
+
+FR-02: PERSONAL INVESTMENT ADVISOR
+───────────────────────────────────
+FR-02.1  [P0] Age-based asset allocation (equity/debt/gold split)
+FR-02.2  [P0] Goal-based planning (retirement, house, education, wealth)
+FR-02.3  [P1] SIP calculator with inflation adjustment
+FR-02.4  [P1] Market-condition-adjusted recommendations
+FR-02.5  [P0] AI-generated advice in plain English
+FR-02.6  [P2] Portfolio rebalancing suggestions
+FR-02.7  [P1] Active vs Passive investor path
+
+Age-Based Allocation Rules:
+  Age 20-30 → Equity 80-90%, Bonds 5-10%, Gold 5-10%
+  Age 30-45 → Equity 60-75%, Bonds 15-25%, Gold 10-15%
+  Age 45-60 → Equity 40-60%, Bonds 25-40%, Gold 10-20%
+  Age 60+   → Equity 20-40%, Bonds 45-60%, Gold 10-20%
+
+Formula: Equity % = 110 - Age (adjusted by risk tolerance)
+
+FR-03: MUTUAL FUND ADVISORY
+────────────────────────────
+FR-03.1  [P0] Active vs Passive preference selection
+FR-03.2  [P0] Category-wise MF recommendations
+              (Large Cap, Mid Cap, Small Cap, Flexi Cap, ELSS, 
+               Debt, Liquid, Index Fund, Gold ETF)
+FR-03.3  [P0] Index fund suggestions for passive investors
+FR-03.4  [P1] MF comparison (expense ratio, AUM, returns, Sharpe)
+FR-03.5  [P1] SIP vs Lumpsum recommendation based on market valuation
+              (If Nifty PE > 22 → favor SIP over lump sum)
+FR-03.6  [P2] MF overlap analysis (detect if two funds hold same stocks)
+FR-03.7  [P1] Direct vs Regular plan cost comparison
+FR-03.8  [P1] Core-Satellite approach for hybrid investors
+              (70% passive index funds + 30% active alpha-seeking funds)
+
+Investment Style Decision Tree:
+  User selects "Active"  → Score funds by alpha, Sharpe, consistency
+  User selects "Passive" → Score funds by tracking error, expense ratio
+  User selects "Hybrid"  → Core (70%) passive + Satellite (30%) active
+
+FR-04: STOCK SCREENER
+─────────────────────
+FR-04.1  [P0] Filter by 15+ fundamental parameters:
+              - Market Cap (Large/Mid/Small)
+              - PE Ratio
+              - PB Ratio
+              - ROE (Return on Equity)
+              - ROCE (Return on Capital Employed)
+              - Debt to Equity
+              - EPS (Earnings Per Share)
+              - EPS Growth (1yr, 3yr, 5yr)
+              - Revenue / Sales
+              - Revenue Growth (1yr, 3yr)
+              - Operating Profit Margin
+              - Net Profit Margin
+              - Free Cash Flow
+              - Dividend Yield
+              - Dividend Payout Ratio
+              - Promoter Holding
+              - Promoter Pledge
+              - Current Ratio
+              - PEG Ratio
+              - Book Value Growth
+FR-04.2  [P0] Sector-based filtering
+              (IT, Pharma, Banking, FMCG, Auto, Chemical, Energy, 
+               Infra, Real Estate, Metal, Textile, etc.)
+FR-04.3  [P0] Multi-factor composite scoring (0-100)
+FR-04.4  [P1] Save custom screener queries
+FR-04.5  [P2] Export results to CSV
+FR-04.6  [P1] AI explanation for each stock pick
+
+FR-05: CURATED STRATEGY PORTFOLIOS
+───────────────────────────────────
+FR-05.1  [P0] Ten Baggers Strategy
+              Criteria: Market Cap ₹500-10,000 Cr, Revenue Growth >20% 
+              3yr CAGR, EPS Growth >25% 3yr, ROE >18%, D/E <1, 
+              Promoter >40%, Pledge <5%
+              Risk: HIGH | Horizon: 5-10 years
+
+FR-05.2  [P0] Steady Compounders Strategy
+              Criteria: Market Cap >₹20,000 Cr, Revenue Growth >10% 
+              5yr consistent, ROE >15% consistent, D/E <0.5, PE <40, 
+              Profit Growth positive 8+ quarters, FCF positive
+              Risk: LOW-MEDIUM | Horizon: 3-7 years
+
+FR-05.3  [P0] Dividend Kings Strategy
+              Criteria: Dividend Yield >2%, Payout Ratio 25-60%, 
+              Consecutive Dividend Years >5, Revenue Growth >5%, 
+              D/E <1, FCF positive, Payout increasing YoY
+              Risk: LOW | Horizon: Long-term passive income
+
+FR-05.4  [P1] GARP Strategy (Growth at Reasonable Price)
+              Criteria: PEG Ratio <1, EPS Growth >15%, 
+              PE < sector average, ROE >15%, ROCE >15%
+              Risk: MEDIUM | Horizon: 3-5 years
+
+FR-05.5  [P2] Turnaround Plays Strategy
+              Criteria: Stock fallen >40% from 52-week high, 
+              Recent quarter profit after losses, Debt reducing, 
+              Promoter increasing holding, Institutions entering
+              Risk: HIGH | Horizon: 2-4 years
+
+FR-05.6  [P0] Each strategy shows top 10-15 stocks with scores
+
+FR-06: BACKTESTING
+──────────────────
+FR-06.1  [P1] Backtest any strategy over 1/3/5/10 year periods
+FR-06.2  [P1] Compare strategy returns vs Nifty 50 benchmark
+FR-06.3  [P1] Show CAGR, max drawdown, Sharpe ratio, alpha
+FR-06.4  [P1] Visual equity curve chart
+FR-06.5  [P2] Period-wise breakdown (quarterly performance)
+FR-06.6  [P2] Best/worst stock picks in each period
+
+FR-07: MARKET OVERVIEW
+──────────────────────
+FR-07.1  [P0] Nifty/Sensex current levels and trend
+FR-07.2  [P1] Market valuation indicators (Nifty PE, Market Cap/GDP)
+FR-07.3  [P2] FII/DII activity data
+FR-07.4  [P2] Sector heatmap
+FR-07.5  [P1] Market mood indicator (Greedy/Neutral/Fearful)
+
+================================================================================
+4. NON-FUNCTIONAL REQUIREMENTS
+================================================================================
+
+NFR-01: PERFORMANCE
+───────────────────
+NFR-01.1  API response time (cached data)           → < 100ms (p95)
+NFR-01.2  API response time (cache miss)             → < 2 seconds (p95)
+NFR-01.3  AI advice generation                       → < 5 seconds
+NFR-01.4  Stock screener query (against local DB)    → < 500ms
+NFR-01.5  Concurrent users supported (POC)           → 100+
+NFR-01.6  Nightly ETL pipeline completion            → < 30 minutes
+
+NFR-02: RELIABILITY
+───────────────────
+NFR-02.1  Uptime target                              → 99% (POC)
+NFR-02.2  AI provider failover                       → Automatic
+          (Gemini → Groq → Ollama)
+NFR-02.3  Data staleness tolerance:
+          - Fundamentals: 24 hours
+          - Stock prices: 5 minutes (market hours)
+          - MF NAVs: 24 hours
+NFR-02.4  Graceful degradation                       → App works with 
+          cached data if external APIs fail
+
+NFR-03: SECURITY
+────────────────
+NFR-03.1  Password storage       → bcrypt with salt (12 rounds)
+NFR-03.2  JWT security           → Access token: 15min, 
+                                    Refresh token: 7 days (httpOnly cookie)
+NFR-03.3  API rate limiting      → Per-user: 60 req/min
+                                    Per-IP: 120 req/min
+NFR-03.4  Input validation       → Pydantic schemas on every endpoint
+NFR-03.5  CORS                   → Whitelist frontend domain only
+NFR-03.6  SQL injection          → Parameterized queries via ORM
+NFR-03.7  Secrets management     → .env files, never in source code
+NFR-03.8  HTTPS                  → TLS termination at deployment platform
+
+NFR-04: SCALABILITY
+───────────────────
+NFR-04.1  Stateless backend      → No server-side sessions, JWT-based
+NFR-04.2  Cache-first design     → Redis for hot data, reduces DB load
+NFR-04.3  Request coalescing     → Dedup concurrent identical API calls
+NFR-04.4  Horizontal scaling     → Can add instances behind load balancer
+NFR-04.5  DB connection pooling  → Prevent connection exhaustion
+
+NFR-05: MAINTAINABILITY
+───────────────────────
+NFR-05.1  Clean layered architecture (routes → services → data)
+NFR-05.2  Auto-generated Swagger/OpenAPI documentation
+NFR-05.3  Unit tests for scoring engine, allocation logic
+NFR-05.4  Integration tests for API endpoints
+NFR-05.5  Structured JSON logging with correlation IDs
+NFR-05.6  Environment-based configuration, no hardcoded values
+
+NFR-06: COMPLIANCE
+──────────────────
+NFR-06.1  SEBI disclaimer prominent on every advice page
+NFR-06.2  No buy/sell order execution — information only
+NFR-06.3  Data source attribution (NSE, BSE, AMFI)
+NFR-06.4  "Past performance ≠ future results" on all backtest pages
+
+================================================================================
+5. TECHNOLOGY STACK & JUSTIFICATION
+================================================================================
+
+BACKEND:
+────────
+  Language:    Python 3.11+
+  Framework:   FastAPI (async, auto-docs, Pydantic validation)
+  ORM:         SQLAlchemy 2.0 (async) + Alembic (migrations)
+  Task Queue:  APScheduler (for nightly CRON jobs)
+  Testing:     pytest + httpx (async test client)
+
+  WHY PYTHON OVER NODE.JS:
+  - Finance libraries (yfinance, pandas, nse-py, mftool, backtrader)
+    are ALL Python-native. No equivalent in Node.js.
+  - AI/ML ecosystem (LangChain, scikit-learn) is Python-first.
+  - Pandas DataFrames are industry standard for financial data.
+  - Using Node.js would require wrapping Python scripts or 
+    reimplementing what pandas does from scratch.
+  - FastAPI is async and benchmarks close to Express.js performance.
+
+FRONTEND:
+─────────
+  Framework:   Next.js 14 (React, TypeScript)
+  Styling:     Tailwind CSS
+  Charts:      Recharts (for equity curves, pie charts, bar charts)
+  Tables:      TanStack Table (sortable, filterable stock tables)
+  Forms:       React Hook Form + Zod (validation)
+  State:       Zustand (lightweight global state)
+  HTTP:        Axios / fetch with React Query (caching + auto-refetch)
+  Auth UI:     Custom + @react-oauth/google
+  Animations:  Framer Motion
+  Icons:       Lucide React
+
+DATABASE:
+─────────
+  Primary DB:  PostgreSQL 15
+               (Financial data is relational: stocks→sectors, MFs→AMCs)
+               Free tier: Supabase or Neon (500MB) or Render
+  Cache:       Redis 7
+               (Hot data: prices, screener results, AI responses)
+               Free tier: Redis Cloud (30MB) or Upstash (10K cmds/day)
+
+DEPLOYMENT:
+───────────
+  Backend:     Render.com free tier / Railway.app
+  Frontend:    Vercel free tier
+  Database:    Supabase free tier (500MB PostgreSQL)
+  Redis:       Upstash free tier (10K commands/day)
+
+AI PROVIDERS:
+─────────────
+  Primary:     Google Gemini (15 RPM, 1M tokens/day FREE)
+  Fallback:    Groq (Llama 3.1 70B, 30 RPM FREE)
+  Offline:     Ollama + Mistral 7B (runs on local machine)
+
+DEVOPS:
+───────
+  Containers:  Docker + Docker Compose (local development)
+  CI/CD:       GitHub Actions (lint, test, deploy)
+  Monitoring:  Structured logging (JSON format)
+
+================================================================================
+6. AI PROVIDER STRATEGY
+================================================================================
+
+Multi-Provider AI Gateway with Automatic Failover:
+
+         User Request
+              │
+              ▼
+      ┌───────────────┐
+      │  AI GATEWAY   │  ← Provider-agnostic abstraction layer
+      │  (You build   │
+      │   this)       │
+      └───────┬───────┘
+              │
+       ┌──────┼──────────┐
+       ▼      ▼          ▼
+    Gemini   Groq    Ollama/Local
+    (Primary) (Fallback) (Offline)
+
+Cost Analysis:
+  Google Gemini Free Tier:
+    - 15 requests per minute
+    - 1,000,000 tokens per day
+    - Models: Gemini 1.5 Flash (fast), Gemini 1.5 Pro (quality)
+    - More than enough for POC with 100 users
+
+  Groq Free Tier:
+    - 30 requests per minute
+    - Llama 3.1 70B model (excellent quality)
+    - Ultra-fast inference (~500 tokens/sec)
+    
+  Ollama (Local):
+    - Completely free
+    - Needs 16GB RAM minimum
+    - Models: Mistral 7B, Llama 3.1 8B
+    - Speed: ~5-15 tokens/sec on CPU
+    - Quality: Decent for basic advice
+
+Interview Talking Point:
+  "I built a provider-agnostic AI gateway with automatic failover. 
+   If Gemini rate-limits, it falls back to Groq, and can run fully 
+   offline with Ollama for air-gapped demos."
+
+================================================================================
+7. DATA SOURCES (FREE / LOW COST)
+================================================================================
+
+STOCK DATA:
+───────────
+  yfinance (Python library)
+    - NSE/BSE stock prices ✓
+    - Historical data ✓
+    - Basic fundamentals ✓
+    - Dividends & splits ✓
+    - Limitation: Can get rate-limited with too many requests
+    - Cost: FREE
+
+  nse-py / nsetools (Python library)
+    - Live NSE prices, indices ✓
+    - Delivery data, FII/DII data ✓
+    - Corporate actions ✓
+    - Limitation: Blocks if too many requests
+    - Cost: FREE
+
+  jugaad-data (Python library)
+    - NSE historical data ✓
+    - Stock listing data ✓
+    - Cost: FREE
+
+MUTUAL FUND DATA:
+─────────────────
+  AMFI India (Official)
+    - URL: https://www.amfiindia.com/spages/NAVAll.txt
+    - Daily NAV for ALL mutual funds in India
+    - Format: Text file, needs parsing
+    - Updated daily by 11 PM IST
+    - Cost: FREE, no API key
+
+  mftool (Python library)
+    - NAV, scheme info, historical NAV
+    - Cost: FREE
+
+ECONOMIC / MACRO DATA:
+──────────────────────
+  FRED API (Federal Reserve Economic Data)
+    - Global economic indicators
+    - India GDP, inflation
+    - Free API key
+    - Cost: FREE
+
+PAID OPTION (if needed, $14/month):
+  Financial Modeling Prep API
+    - Indian stocks fundamentals in clean JSON
+    - 300 calls/min
+    - Clean, reliable data
+    - Use only if free sources become unreliable
+
+================================================================================
+8. SYSTEM ARCHITECTURE
+================================================================================
+
+HIGH-LEVEL ARCHITECTURE:
+
+                        ┌──────────────┐
+                        │   USERS      │
+                        │  (Browser)   │
+                        └──────┬───────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │   FRONTEND          │
+                    │   Next.js (React)   │
+                    │   TypeScript        │
+                    │   Vercel            │
+                    └─────────┬───────────┘
+                              │ HTTPS / REST API
+                              ▼
+                    ┌─────────────────────┐
+                    │   API GATEWAY LAYER │
+                    │                     │
+                    │ • Rate Limiting     │
+                    │ • JWT Validation    │
+                    │ • Request Logging   │
+                    │ • CORS              │
+                    └─────────┬───────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │                     │                     │
+        ▼                     ▼                     ▼
+┌──────────────┐   ┌──────────────┐   ┌──────────────────┐
+│ AUTH SERVICE │   │ ADVISORY     │   │ MARKET DATA      │
+│              │   │ SERVICE      │   │ SERVICE          │
+│ • Register   │   │              │   │                  │
+│ • Login      │   │ • Personal   │   │ • Stock Screener │
+│ • OAuth      │   │   Advisor    │   │ • MF Screener    │
+│ • JWT        │   │ • MF Advisor │   │ • Price Data     │
+│ • Refresh    │   │ • Strategies │   │ • Fundamentals   │
+│              │   │ • Backtest   │   │ • Market Indices │
+└──────┬───────┘   └──────┬───────┘   └────────┬─────────┘
+       │                  │                     │
+       │                  ▼                     │
+       │         ┌──────────────┐               │
+       │         │  AI GATEWAY  │               │
+       │         │              │               │
+       │         │ Gemini ───→  │               │
+       │         │ Groq ────→   │◄──────────────┘
+       │         │ Ollama ──→   │  (AI needs market
+       │         │              │   context for advice)
+       │         └──────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│                   DATA LAYER                          │
+│                                                      │
+│  ┌────────────┐  ┌──────────┐  ┌──────────────────┐ │
+│  │ PostgreSQL │  │  Redis   │  │ External APIs    │ │
+│  │            │  │          │  │                  │ │
+│  │ • Users    │  │ • Stock  │  │ • yfinance       │ │
+│  │ • Profiles │  │   prices │  │ • nse-py         │ │
+│  │ • Stocks   │  │ • Screen │  │ • mftool (AMFI)  │ │
+│  │   (EOD)    │  │   results│  │ • FRED API       │ │
+│  │ • MF NAVs  │  │ • MF data│  │ • Gemini/Groq    │ │
+│  │ • Backtest │  │ • Session│  │                  │ │
+│  │   results  │  │   data   │  │                  │ │
+│  └────────────┘  └──────────┘  └──────────────────┘ │
+│                                                      │
+│  ┌──────────────────────────────────────────────┐    │
+│  │         NIGHTLY ETL PIPELINE (CRON)          │    │
+│  │  (Runs daily after market closes)            │    │
+│  └──────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────┘
+
+BACKEND FOLDER STRUCTURE:
+
+investiq/
+├── backend/
+│   ├── main.py                      # FastAPI entry point
+│   ├── config.py                    # Environment config
+│   ├── requirements.txt
+│   │
+│   ├── api/
+│   │   ├── routes/
+│   │   │   ├── auth.py              # Login, Register, Google OAuth
+│   │   │   ├── advisor.py           # Personal investment advice
+│   │   │   ├── screener.py          # Stock screening queries
+│   │   │   ├── mutual_funds.py      # MF screener & recommendations
+│   │   │   ├── strategies.py        # Pre-built portfolios
+│   │   │   ├── backtest.py          # Backtesting endpoints
+│   │   │   └── market.py            # Market overview, indices
+│   │   ├── dependencies.py          # Auth middleware, rate limiter
+│   │   └── schemas/                 # Pydantic request/response models
+│   │       ├── auth_schemas.py
+│   │       ├── profile_schemas.py
+│   │       ├── screener_schemas.py
+│   │       ├── advisor_schemas.py
+│   │       ├── mf_schemas.py
+│   │       ├── strategy_schemas.py
+│   │       └── backtest_schemas.py
+│   │
+│   ├── core/
+│   │   ├── ai_gateway.py            # Provider-agnostic AI layer
+│   │   ├── cache.py                 # Redis caching layer
+│   │   ├── request_coalescer.py     # Dedup concurrent requests
+│   │   └── rate_limiter.py          # Per-user rate limiting
+│   │
+│   ├── services/
+│   │   ├── advisory_engine.py       # Age-based allocation logic
+│   │   ├── mf_advisory_engine.py    # Mutual fund recommendation logic
+│   │   ├── screener_engine.py       # Filter stocks by criteria
+│   │   ├── mf_screener_engine.py    # Filter mutual funds by criteria
+│   │   ├── scoring_engine.py        # Multi-factor stock scoring
+│   │   ├── mf_scoring_engine.py     # Multi-factor MF scoring
+│   │   ├── backtester.py            # Historical strategy testing
+│   │   └── market_analyzer.py       # Market condition analysis
+│   │
+│   ├── data/
+│   │   ├── providers/
+│   │   │   ├── yfinance_provider.py
+│   │   │   ├── nse_provider.py
+│   │   │   ├── amfi_provider.py     # AMFI MF data
+│   │   │   ├── mftool_provider.py   # mftool library wrapper
+│   │   │   └── base_provider.py     # Abstract interface
+│   │   ├── pipeline/
+│   │   │   ├── nightly_etl.py       # CRON: fetch all EOD data
+│   │   │   ├── fundamental_sync.py  # CRON: quarterly fundamentals
+│   │   │   └── mf_nav_sync.py       # CRON: daily MF NAV update
+│   │   └── cache_warmer.py          # Pre-populate Redis after ETL
+│   │
+│   ├── db/
+│   │   ├── database.py              # SQLAlchemy async setup
+│   │   ├── models.py                # ORM models
+│   │   └── migrations/              # Alembic migrations
+│   │
+│   ├── auth/
+│   │   ├── jwt_handler.py
+│   │   ├── google_oauth.py
+│   │   └── password_utils.py
+│   │
+│   └── tests/
+│       ├── test_screener.py
+│       ├── test_scoring.py
+│       ├── test_advisory.py
+│       ├── test_mf_advisory.py
+│       └── test_auth.py
+│
+├── frontend/                        # (see Section 19 for details)
+│
+├── docker-compose.yml               # PostgreSQL + Redis + Backend
+├── .env.example
+└── README.md
+
+WHY THIS ARCHITECTURE:
+
+Decision                      | Why
+──────────────────────────────┼────────────────────────────────────────
+Monolith (not microservices)  | POC stage. Faster to build, deploy, 
+                              | debug. Logical separation via modules.
+                              | Can extract to microservices later.
+PostgreSQL (not MongoDB)      | Financial data is relational. Stocks 
+                              | have sectors, MFs have AMCs. ACID needed 
+                              | for user data. Free on Supabase.
+Redis (not in-memory dict)    | Need TTL, shared across instances, 
+                              | pub/sub for cache invalidation. 
+                              | Industry standard.
+Nightly ETL (not real-time)   | Free APIs don't support WebSocket. 
+                              | EOD data sufficient for fundamentals. 
+                              | Saves 99% of API calls.
+AI Gateway pattern            | Provider-agnostic. Can switch/failover 
+                              | without changing business logic. Shows 
+                              | design maturity.
+FastAPI (not Flask/Django)    | Async native, auto-generates OpenAPI 
+                              | docs, Pydantic validation, best 
+                              | performance among Python frameworks.
+
+================================================================================
+9. DATA ARCHITECTURE (DATABASE SCHEMA)
+================================================================================
+
+-- USER DOMAIN --
+
+TABLE: users
+  id              UUID PRIMARY KEY
+  email           VARCHAR(255) UNIQUE NOT NULL
+  password_hash   VARCHAR(255)          -- NULL for OAuth-only users
+  auth_provider   VARCHAR(20)           -- 'local' | 'google'
+  google_id       VARCHAR(255)
+  created_at      TIMESTAMP
+  updated_at      TIMESTAMP
+
+TABLE: user_profiles
+  user_id                     UUID PRIMARY KEY (FK → users)
+  age                         INT
+  annual_income               DECIMAL(15,2)
+  monthly_investment_capacity DECIMAL(15,2)
+  risk_tolerance              VARCHAR(20)     -- 'low'|'medium'|'high'
+  investment_goals            JSONB           -- ['retirement','house']
+  time_horizon                VARCHAR(20)     -- 'short'|'medium'|'long'
+  management_style            VARCHAR(20)     -- 'active'|'passive'|'hybrid'
+  preferred_sectors           JSONB           -- ['IT','Banking']
+  risk_score                  INT             -- 1-100 from questionnaire
+  updated_at                  TIMESTAMP
+
+TABLE: saved_screener_queries
+  id              UUID PRIMARY KEY
+  user_id         UUID (FK → users)
+  query_name      VARCHAR(255)
+  filters         JSONB               -- The screener query parameters
+  created_at      TIMESTAMP
+
+-- STOCK DOMAIN --
+
+TABLE: stocks
+  symbol          VARCHAR(20) PRIMARY KEY    -- 'TCS.NS'
+  company_name    VARCHAR(255) NOT NULL
+  sector          VARCHAR(100)
+  industry        VARCHAR(100)
+  market_cap      DECIMAL(20,2)
+  is_active       BOOLEAN DEFAULT TRUE
+  last_updated    TIMESTAMP
+
+TABLE: stock_fundamentals
+  symbol              VARCHAR(20) (FK → stocks)
+  date                DATE
+  pe_ratio            DECIMAL(10,2)
+  pb_ratio            DECIMAL(10,2)
+  roe                 DECIMAL(10,2)
+  roce                DECIMAL(10,2)
+  debt_to_equity      DECIMAL(10,2)
+  eps                 DECIMAL(10,2)
+  eps_growth_1yr      DECIMAL(10,2)
+  eps_growth_3yr      DECIMAL(10,2)
+  revenue             DECIMAL(20,2)
+  revenue_growth_1yr  DECIMAL(10,2)
+  revenue_growth_3yr  DECIMAL(10,2)
+  operating_margin    DECIMAL(10,2)
+  net_margin          DECIMAL(10,2)
+  free_cash_flow      DECIMAL(20,2)
+  dividend_yield      DECIMAL(10,4)
+  dividend_payout     DECIMAL(10,2)
+  promoter_holding    DECIMAL(10,2)
+  promoter_pledge     DECIMAL(10,2)
+  current_ratio       DECIMAL(10,2)
+  peg_ratio           DECIMAL(10,2)
+  book_value          DECIMAL(15,2)
+  PRIMARY KEY (symbol, date)
+
+TABLE: stock_prices
+  symbol          VARCHAR(20) (FK → stocks)
+  date            DATE
+  open            DECIMAL(15,2)
+  high            DECIMAL(15,2)
+  low             DECIMAL(15,2)
+  close           DECIMAL(15,2)
+  volume          BIGINT
+  PRIMARY KEY (symbol, date)
+
+-- MUTUAL FUND DOMAIN --
+
+TABLE: mutual_funds
+  scheme_code     VARCHAR(20) PRIMARY KEY
+  scheme_name     VARCHAR(500) NOT NULL
+  amc             VARCHAR(255)
+  category        VARCHAR(100)        -- 'Large Cap', 'ELSS', 'Index Fund'
+  sub_category    VARCHAR(100)
+  plan_type       VARCHAR(10)         -- 'Direct' | 'Regular'
+  benchmark       VARCHAR(255)
+  fund_manager    VARCHAR(255)
+  inception_date  DATE
+  is_active       BOOLEAN DEFAULT TRUE
+
+TABLE: mf_performance
+  scheme_code         VARCHAR(20) (FK → mutual_funds)
+  date                DATE
+  nav                 DECIMAL(15,4)
+  aum                 DECIMAL(15,2)       -- in Crores
+  expense_ratio       DECIMAL(6,4)
+  return_1yr          DECIMAL(10,2)
+  return_3yr          DECIMAL(10,2)
+  return_5yr          DECIMAL(10,2)
+  return_10yr         DECIMAL(10,2)
+  sharpe_ratio        DECIMAL(10,4)
+  sortino_ratio       DECIMAL(10,4)
+  alpha               DECIMAL(10,4)
+  beta                DECIMAL(10,4)
+  standard_deviation  DECIMAL(10,4)
+  max_drawdown        DECIMAL(10,2)
+  tracking_error      DECIMAL(10,4)       -- For index funds
+  PRIMARY KEY (scheme_code, date)
+
+TABLE: mf_holdings
+  scheme_code     VARCHAR(20) (FK → mutual_funds)
+  stock_symbol    VARCHAR(20)
+  holding_pct     DECIMAL(6,2)
+  as_of_date      DATE
+  PRIMARY KEY (scheme_code, stock_symbol, as_of_date)
+
+-- STRATEGY & BACKTEST DOMAIN --
+
+TABLE: strategy_results
+  id              UUID PRIMARY KEY
+  strategy_name   VARCHAR(50)         -- 'ten_bagger', 'dividend_king'
+  generated_date  DATE
+  stocks          JSONB               -- [{symbol, score, rank}]
+  mutual_funds    JSONB               -- [{scheme_code, score, rank}]
+  metadata        JSONB               -- Market conditions snapshot
+
+TABLE: backtest_results
+  id              UUID PRIMARY KEY
+  user_id         UUID (FK → users)
+  strategy_name   VARCHAR(50)
+  start_date      DATE
+  end_date        DATE
+  initial_amount  DECIMAL(15,2)
+  final_amount    DECIMAL(15,2)
+  cagr            DECIMAL(10,2)
+  max_drawdown    DECIMAL(10,2)
+  sharpe_ratio    DECIMAL(10,4)
+  benchmark_cagr  DECIMAL(10,2)
+  equity_curve    JSONB               -- [{date, value}] for charting
+  created_at      TIMESTAMP
+
+-- MARKET DATA DOMAIN --
+
+TABLE: market_indicators
+  date            DATE PRIMARY KEY
+  nifty_50        DECIMAL(10,2)
+  nifty_pe        DECIMAL(10,2)
+  sensex          DECIMAL(10,2)
+  india_vix       DECIMAL(10,2)
+  usd_inr         DECIMAL(10,4)
+  repo_rate       DECIMAL(6,2)
+  inflation_cpi   DECIMAL(6,2)
+  fii_net         DECIMAL(15,2)       -- FII net buy/sell (Cr)
+  dii_net         DECIMAL(15,2)       -- DII net buy/sell (Cr)
+  market_cap_gdp  DECIMAL(10,2)       -- Buffett indicator
+
+-- INDEXES --
+
+CREATE INDEX idx_stock_sector ON stocks(sector);
+CREATE INDEX idx_stock_market_cap ON stocks(market_cap);
+CREATE INDEX idx_stock_prices_date ON stock_prices(date);
+CREATE INDEX idx_mf_category ON mutual_funds(category);
+CREATE INDEX idx_mf_plan ON mutual_funds(plan_type);
+CREATE INDEX idx_strategy_date ON strategy_results(generated_date);
+
+================================================================================
+10. REDIS CACHE SCHEMA
+================================================================================
+
+# Price data (short TTL — changes frequently)
+stock:price:{symbol}              → {price, change, volume}    TTL: 60s
+market:indices                    → {nifty, sensex, vix}       TTL: 30s
+
+# Fundamental data (long TTL — changes quarterly)
+stock:fundamentals:{symbol}       → {pe, roe, eps, ...}        TTL: 24h
+mf:nav:{scheme_code}              → {nav, date}                TTL: 24h
+mf:performance:{scheme_code}      → {returns, ratios}          TTL: 24h
+
+# Screener results (medium TTL — recomputed nightly)
+screener:result:{query_hash}      → [list of stocks]           TTL: 1h
+screener:mf:result:{query_hash}   → [list of MFs]              TTL: 1h
+strategy:{name}:latest            → [ranked stocks/MFs]        TTL: 6h
+
+# AI responses (long TTL — same question = same answer)
+ai:advice:{profile_hash}          → {advice text}              TTL: 12h
+
+# Rate limiting
+ratelimit:{user_id}:{endpoint}    → count                      TTL: 60s
+
+# Request coalescing (in-flight dedup)
+inflight:{data_key}               → pending                    TTL: 30s
+
+NOTE: Redis free tier (Upstash) is 30MB. Strategy:
+  - Cache only top 500 stocks (by market cap)
+  - Cache only top 200 MFs (by AUM)
+  - LRU eviction for the rest
+
+================================================================================
+11. API DESIGN (ALL ENDPOINTS)
+================================================================================
+
+BASE URL: /api/v1
+
+── AUTH ────────────────────────────────────────────────────
+POST   /auth/register              Register new user
+       Body: {email, password, name}
+       Response: {user_id, access_token, refresh_token}
+
+POST   /auth/login                 Login with email/password
+       Body: {email, password}
+       Response: {access_token, refresh_token}
+
+POST   /auth/google                Google OAuth login
+       Body: {google_id_token}
+       Response: {access_token, refresh_token}
+
+POST   /auth/refresh               Refresh access token
+       Cookie: refresh_token (httpOnly)
+       Response: {access_token}
+
+POST   /auth/logout                Invalidate refresh token
+       Header: Authorization: Bearer <token>
+       Response: {message: "logged out"}
+
+── USER PROFILE ────────────────────────────────────────────
+GET    /profile                    Get current user profile
+       Header: Authorization: Bearer <token>
+       Response: {age, income, risk_tolerance, goals, ...}
+
+PUT    /profile                    Update profile
+       Header: Authorization: Bearer <token>
+       Body: {age, income, risk_tolerance, goals, 
+              management_style, preferred_sectors}
+       Response: {updated_profile}
+
+POST   /profile/risk-assessment    Submit risk questionnaire
+       Header: Authorization: Bearer <token>
+       Body: {answers: [{question_id, answer}]}
+       Response: {risk_score, risk_category, explanation}
+
+── ADVISOR ─────────────────────────────────────────────────
+POST   /advisor/allocation         Get personalized asset allocation
+       Header: Authorization: Bearer <token>
+       Body: {} (uses profile data)
+       Response: {
+         equity_pct, debt_pct, gold_pct, international_pct,
+         equity_breakdown: {large_cap, mid_cap, small_cap},
+         recommended_instruments: [...],
+         ai_explanation: "..."
+       }
+
+POST   /advisor/mutual-funds       Get MF recommendations
+       Header: Authorization: Bearer <token>
+       Body: {style: "active"|"passive"|"hybrid"}
+       Response: {
+         recommendations: [{
+           category, scheme_name, scheme_code, score,
+           expense_ratio, returns_3yr, sharpe, reason
+         }],
+         model_portfolio: {
+           core: [...],       // For hybrid: passive index funds
+           satellite: [...]   // For hybrid: active funds
+         },
+         ai_explanation: "..."
+       }
+
+POST   /advisor/sip-plan           Get SIP plan with projections
+       Header: Authorization: Bearer <token>
+       Body: {monthly_amount, goal, target_year}
+       Response: {
+         projected_corpus, assumed_cagr, inflation_adjusted,
+         monthly_allocation: [{fund/asset, amount}],
+         year_wise_projection: [{year, value}]
+       }
+
+GET    /advisor/market-outlook     Current market conditions + advice
+       Response: {
+         market_mood: "greedy"|"neutral"|"fearful",
+         nifty_pe: 22.5,
+         valuation: "fairly_valued"|"overvalued"|"undervalued",
+         recommendation: "SIP"|"lump_sum"|"wait",
+         ai_analysis: "..."
+       }
+
+── STOCK SCREENER ──────────────────────────────────────────
+POST   /screener/stocks            Run stock screener with filters
+       Body: {
+         filters: {
+           market_cap_min: 10000,    // in Cr
+           market_cap_max: null,
+           pe_min: null, pe_max: 25,
+           roe_min: 15,
+           roce_min: 18,
+           debt_to_equity_max: 0.5,
+           eps_growth_3yr_min: 20,
+           revenue_growth_3yr_min: 15,
+           dividend_yield_min: null,
+           promoter_holding_min: 50,
+           sector: "IT"             // optional
+         },
+         sort_by: "composite_score",
+         order: "desc",
+         page: 1,
+         page_size: 20
+       }
+       Response: {
+         total: 45,
+         stocks: [{
+           symbol, name, sector, market_cap,
+           pe, roe, eps_growth, composite_score, rank
+         }]
+       }
+
+GET    /screener/filters           Get available filter ranges
+       Response: {
+         market_cap: {min: 10, max: 2000000},
+         pe_ratio: {min: -50, max: 500},
+         sectors: ["IT", "Banking", "Pharma", ...],
+         ...
+       }
+
+POST   /screener/save              Save a screener query
+       Header: Authorization: Bearer <token>
+       Body: {query_name: "My Growth Screen", filters: {...}}
+       Response: {query_id}
+
+GET    /screener/saved             Get user's saved queries
+       Header: Authorization: Bearer <token>
+       Response: [{query_id, query_name, filters, created_at}]
+
+── MUTUAL FUND SCREENER ────────────────────────────────────
+POST   /screener/mutual-funds      Filter MFs by criteria
+       Body: {
+         filters: {
+           category: "Large Cap",
+           plan_type: "Direct",
+           expense_ratio_max: 1.0,
+           return_3yr_min: 12,
+           sharpe_min: 1.0,
+           aum_min: 500,           // in Cr
+           style: "active"|"passive"
+         },
+         sort_by: "score",
+         page: 1, page_size: 20
+       }
+       Response: {
+         total: 28,
+         funds: [{
+           scheme_code, scheme_name, amc, category,
+           nav, expense_ratio, return_3yr, sharpe, score, rank
+         }]
+       }
+
+GET    /screener/mf-categories     Get MF categories
+       Response: ["Large Cap", "Mid Cap", "Small Cap", "ELSS", 
+                  "Flexi Cap", "Index Fund", "Liquid", "Debt", ...]
+
+POST   /screener/mf-compare        Compare 2-4 MFs side by side
+       Body: {scheme_codes: ["119551", "120503", "118825"]}
+       Response: {
+         funds: [{
+           scheme_name, expense_ratio, return_1yr, return_3yr,
+           return_5yr, sharpe, alpha, max_drawdown, aum, 
+           top_10_holdings
+         }],
+         verdict: "AI comparison summary..."
+       }
+
+POST   /screener/mf-overlap        Check portfolio overlap
+       Body: {scheme_codes: ["119551", "120503"]}
+       Response: {
+         overlap_percentage: 45.2,
+         common_stocks: [{name, fund_a_pct, fund_b_pct}],
+         recommendation: "High overlap detected. Consider 
+                          replacing one fund."
+       }
+
+── STRATEGIES ──────────────────────────────────────────────
+GET    /strategies                  List all strategies
+       Response: [{
+         name, display_name, description, risk_level, 
+         time_horizon, stock_count, last_updated
+       }]
+
+GET    /strategies/:name           Get strategy detail + picks
+       Response: {
+         name, description, screening_criteria,
+         risk_level, time_horizon,
+         stocks: [{symbol, name, score, rank, key_metrics}],
+         mutual_funds: [{scheme_code, name, score, rank}],
+         ai_explanation: "Why these stocks were selected..."
+       }
+
+── BACKTEST ────────────────────────────────────────────────
+POST   /backtest/run               Run backtest for a strategy
+       Body: {
+         strategy: "ten_bagger",
+         start_date: "2020-01-01",
+         end_date: "2025-03-01",
+         initial_amount: 100000,
+         rebalance: "quarterly"
+       }
+       Response: {
+         backtest_id: "...",
+         status: "processing"       // async, poll for results
+       }
+
+GET    /backtest/results/:id       Get backtest results
+       Response: {
+         strategy, start_date, end_date,
+         initial_amount: 100000,
+         final_amount: 485000,
+         cagr: 37.2,
+         benchmark_cagr: 14.8,      // Nifty 50
+         alpha: 22.4,
+         max_drawdown: -32.0,
+         sharpe_ratio: 1.8,
+         win_rate: 72,              // % of quarters positive
+         equity_curve: [{date, value, benchmark_value}],
+         period_breakdown: [{
+           period, stocks_held, period_return, benchmark_return
+         }]
+       }
+
+── MARKET DATA ─────────────────────────────────────────────
+GET    /market/indices             Nifty, Sensex, VIX
+       Response: {
+         nifty: {value, change, change_pct},
+         sensex: {value, change, change_pct},
+         vix: {value, change}
+       }
+
+GET    /market/indicators          PE, Market Cap/GDP, FII/DII
+       Response: {
+         nifty_pe, nifty_pe_median,
+         market_cap_to_gdp,
+         fii_net_today, dii_net_today,
+         repo_rate, inflation_cpi,
+         market_mood
+       }
+
+GET    /market/stock/:symbol       Get stock details + fundamentals
+       Response: {
+         symbol, name, sector, market_cap,
+         current_price, change, change_pct,
+         fundamentals: {pe, roe, roce, eps, ...},
+         price_history_30d: [{date, close}]
+       }
+
+GET    /market/stock/:symbol/price Get price history
+       Query: ?period=1y
+       Response: {
+         prices: [{date, open, high, low, close, volume}]
+       }
+
+================================================================================
+12. MUTUAL FUND ADVISORY MODULE — DETAILED DESIGN
+================================================================================
+
+INVESTMENT STYLE DECISION TREE:
+
+User selects investment preference:
+    │
+    ├── "I want to actively manage" (ACTIVE)
+    │   ├── High Risk  → Small Cap, Mid Cap, Sectoral Funds
+    │   ├── Medium Risk → Flexi Cap, Large & Mid Cap, ELSS
+    │   └── Low Risk   → Large Cap, Balanced Advantage, Hybrid
+    │
+    ├── "I want set-and-forget" (PASSIVE)
+    │   ├── Equity → Nifty 50 Index, Nifty Next 50, Nifty 500
+    │   ├── Debt   → Liquid Fund, Short Duration, Gilt
+    │   └── Gold   → Gold ETF, Sovereign Gold Bond
+    │
+    └── "Mix of both" (HYBRID)
+        ├── Core (70%)      → Index Funds (Passive)
+        └── Satellite (30%) → Active Funds (Alpha generation)
+
+SCORING WEIGHTS — ACTIVE FUNDS:
+  alpha                    → 0.20  (How much it beats benchmark)
+  sharpe_ratio             → 0.15  (Risk-adjusted performance)
+  consistency              → 0.15  (Rolling returns consistency)
+  return_5yr_cagr          → 0.15  (Long-term performance)
+  fund_manager_tenure      → 0.10  (Experienced manager)
+  expense_ratio (inverse)  → 0.10  (Lower expense = higher score)
+  aum_sweet_spot           → 0.10  (Not too small, not too large)
+  max_drawdown (inverse)   → 0.05  (Lower drawdown = higher score)
+
+SCORING WEIGHTS — PASSIVE/INDEX FUNDS:
+  tracking_error (inverse) → 0.30  (How closely tracks index — MOST important)
+  expense_ratio (inverse)  → 0.30  (Lower cost — CRITICAL for index funds)
+  aum                      → 0.15  (Higher AUM = better liquidity)
+  tracking_diff (inverse)  → 0.15  (Return difference vs index)
+  fund_age                 → 0.10  (Older = more proven)
+
+SIP VS LUMPSUM DECISION:
+  If Nifty PE > 24  → "Market is overvalued. Favor SIP over lump sum."
+  If Nifty PE 18-24 → "Market is fairly valued. Both SIP and lump sum work."
+  If Nifty PE < 18  → "Market is undervalued. Lump sum may be advantageous."
+
+DIRECT VS REGULAR COMPARISON:
+  Show: "If you invest ₹10,000/month for 20 years:
+         Direct Plan (0.5% expense):  ₹1.00 Cr
+         Regular Plan (1.5% expense): ₹0.82 Cr
+         You save ₹18 Lakhs by choosing Direct Plan"
+
+MF OVERLAP ANALYSIS:
+  Compare top holdings of two funds.
+  If overlap > 60% → "These funds are essentially the same. 
+                       Consider diversifying."
+  If overlap 30-60% → "Moderate overlap. Acceptable."
+  If overlap < 30% → "Good diversification."
+
+================================================================================
+13. STOCK SCORING & RANKING ENGINE
+================================================================================
+
+COMPOSITE SCORING APPROACH:
+  Each stock gets a score from 0 to 100 based on weighted factors.
+  Factors are normalized using percentile ranking across all stocks.
+  e.g., If a stock's ROE is better than 80% of stocks → ROE score = 80
+
+STRATEGY-SPECIFIC WEIGHTS:
+
+TEN BAGGER WEIGHTS:
+  revenue_growth_3yr     → 0.20
+  eps_growth_3yr         → 0.20
+  roe                    → 0.15
+  low_debt               → 0.10
+  promoter_holding       → 0.10
+  small_cap_bonus        → 0.10  (smaller = more room to grow)
+  relative_strength      → 0.15  (price momentum)
+
+STEADY COMPOUNDER WEIGHTS:
+  consistency_score      → 0.25  (how consistent is growth)
+  roe                    → 0.20
+  roce                   → 0.15
+  low_debt               → 0.15
+  free_cash_flow         → 0.15
+  pe_reasonableness      → 0.10
+
+DIVIDEND KING WEIGHTS:
+  dividend_yield         → 0.25
+  dividend_consistency   → 0.25  (years of consecutive dividends)
+  payout_sustainability  → 0.15  (payout ratio 25-60% is sustainable)
+  revenue_growth         → 0.10
+  low_debt               → 0.10
+  free_cash_flow         → 0.15
+
+GARP WEIGHTS:
+  peg_ratio (inverse)    → 0.25
+  eps_growth             → 0.20
+  pe_vs_sector_avg       → 0.20
+  roe                    → 0.15
+  roce                   → 0.10
+  free_cash_flow         → 0.10
+
+TURNAROUND WEIGHTS:
+  price_from_52w_high    → 0.20  (bigger fall = more potential)
+  recent_profit_turnaround → 0.25
+  debt_reduction         → 0.15
+  promoter_buying        → 0.20
+  institutional_entry    → 0.20
+
+================================================================================
+14. BACKTESTING ENGINE
+================================================================================
+
+BACKTESTING FLOW:
+  1. User selects strategy + time period + initial investment
+  2. System goes back to start_date
+  3. Runs the screener with HISTORICAL data as of that date
+  4. Picks top 10 stocks, equal weight allocation
+  5. Simulates holding until next rebalance date (quarterly)
+  6. Recalculates portfolio value based on actual price changes
+  7. Rebalances: runs screener again, new top 10
+  8. Repeats until end_date
+  9. Calculates final metrics
+
+METRICS CALCULATED:
+  - Final portfolio value
+  - CAGR (Compound Annual Growth Rate)
+  - Nifty 50 CAGR (benchmark) over same period
+  - Alpha (strategy CAGR minus benchmark CAGR)
+  - Max Drawdown (worst peak-to-trough decline)
+  - Sharpe Ratio (risk-adjusted return)
+  - Win Rate (% of quarters with positive returns)
+  - Best/Worst stock picks
+
+EXAMPLE OUTPUT:
+  Strategy: Ten Baggers
+  Period: Jan 2020 → Mar 2025 (5 years)
+  Initial: ₹1,00,000
+  Final: ₹4,85,000
+  CAGR: 37.2%
+  Nifty CAGR: 14.8%
+  Alpha: +22.4%
+  Max Drawdown: -32% (Mar 2020)
+  Sharpe: 1.8
+  Win Rate: 72%
+
+DISCLAIMER: Survivorship bias warning. Past performance ≠ future results.
+
+================================================================================
+15. CACHING STRATEGY (MULTI-LAYER)
+================================================================================
+
+THREE CACHE LAYERS:
+
+Layer 1: Redis (Hot Cache)
+  - Stock prices: TTL 60 seconds
+  - MF NAVs: TTL 24 hours
+  - Fundamentals: TTL 24 hours
+  - Screener results: TTL 1 hour
+  - AI responses: TTL 12 hours
+  - Strategy picks: TTL 6 hours
+
+Layer 2: PostgreSQL (Warm Cache)
+  - Full fundamental data for all ~5000 stocks
+  - All MF NAVs and performance data
+  - Updated via nightly ETL
+  - Historical data stored permanently
+
+Layer 3: External APIs (Cold — Only on Cache Miss)
+  - Called only when Redis AND PostgreSQL miss
+  - Or when forced refresh by admin
+  - Rate-limited and throttled
+
+REQUEST FLOW:
+  1. Check Redis → HIT → Return (< 5ms)
+  2. Miss → Check PostgreSQL → HIT → Return + Populate Redis (< 50ms)
+  3. Miss → Call External API → Return + Populate Both (< 2000ms)
+
+DATA FRESHNESS BY TYPE:
+  Stock Price (live)     → Cache 60s    → On-demand + cache
+  Day's OHLC             → Cache 24h    → EOD batch job
+  Fundamentals           → Cache 24h    → Nightly CRON
+  Financials             → Cache 7 days → After results season
+  Company Info           → Cache 30 days → Monthly refresh
+  MF NAVs                → Cache 24h    → Nightly CRON
+  Market Indices         → Cache 30s    → On-demand + cache
+
+================================================================================
+16. REQUEST COALESCING PATTERN
+================================================================================
+
+PROBLEM:
+  50 users request TCS stock data at the exact same moment.
+  Without dedup: 50 external API calls → rate limited → expensive
+  With dedup: 1 API call, 49 users wait for the same result
+
+SOLUTION (Singleflight Pattern):
+  - Maintain a dictionary of "in-flight" requests
+  - When a request comes in, check if someone is already fetching it
+  - If yes: wait for their result (don't make another API call)
+  - If no: make the API call, share result with everyone waiting
+
+  This is the same pattern used by Go's singleflight package 
+  and CDNs like Cloudflare.
+
+INTERVIEW TALKING POINT:
+  "I implemented request coalescing to deduplicate concurrent API calls. 
+   If 100 users request the same stock simultaneously, only 1 external 
+   API call is made, reducing costs by 99%."
+
+================================================================================
+17. NIGHTLY ETL PIPELINE
+================================================================================
+
+SCHEDULE: Every day at 7:00 PM IST (after market closes at 3:30 PM)
+
+7:00 PM  → Step 1: Fetch EOD prices for all NSE stocks (~5000)
+7:15 PM  → Step 2: Fetch MF NAVs from AMFI (all schemes)
+7:30 PM  → Step 3: Update fundamental data (rotating batch of 200 stocks/day)
+           (Full rotation of top 1000 stocks every 5 days)
+8:00 PM  → Step 4: Run all 5 strategy screeners
+8:30 PM  → Step 5: Score and rank all stocks per strategy
+9:00 PM  → Step 6: Score and rank top 200 MFs
+9:15 PM  → Step 7: Update market indicators (Nifty PE, FII/DII, etc.)
+9:30 PM  → Step 8: Warm Redis cache (pre-populate top 500 stocks + 200 MFs)
+10:00 PM → Step 9: Generate daily market summary via AI
+
+RESULT: When users access the app next morning, ZERO external API calls 
+needed for 95% of requests. Everything served from cache.
+
+INTERVIEW TALKING POINT:
+  "I built an offline-first architecture. A nightly ETL pipeline 
+   pre-fetches and caches all data, so during market hours the system 
+   serves from cache with sub-10ms latency and zero external dependencies."
+
+================================================================================
+18. AUTH ARCHITECTURE
+================================================================================
+
+DUAL AUTH: Email/Password + Google OAuth
+
+JWT FLOW:
+  Register → Hash password (bcrypt, 12 rounds) → Store in PostgreSQL
+  Login → Verify password → Issue JWT pair:
+    Access Token:  15 min expiry, sent in Authorization header
+    Refresh Token: 7 days expiry, sent in httpOnly secure cookie
+
+  On expiry: Frontend calls /auth/refresh → New access token issued
+
+GOOGLE OAUTH FLOW:
+  Frontend → Google Sign-In → Receives ID Token
+  Backend → Verify ID token with Google's public keys
+  Backend → Create user (if new) or find existing user
+  Backend → Issue JWT pair (same as above)
+
+TOKEN PAYLOAD:
+  {
+    "sub": "user_uuid",
+    "email": "user@email.com",
+    "iat": issued_at_timestamp,
+    "exp": expiry_timestamp,
+    "type": "access" | "refresh"
+  }
+
+SECURITY MEASURES:
+  - Passwords: bcrypt with 12 salt rounds
+  - Access tokens: Short-lived (15 min)
+  - Refresh tokens: httpOnly cookie (not accessible via JavaScript)
+  - Rate limiting on /auth endpoints: 10 req/min (prevent brute force)
+  - CORS: Whitelist only frontend domain
+
+================================================================================
+19. FRONTEND PAGES & COMPONENTS (FOR FIGMA DESIGN)
+================================================================================
+
+PAGE INVENTORY:
+──────────────
+
+PAGE 1: LANDING PAGE (/)
+  Purpose: Introduce InvestIQ, convert visitors to sign-ups
+  Layout: Full-width, sections scroll vertically
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │ [Navbar]                                                │
+    │  Logo (InvestIQ) | Features | Pricing | Login | Sign Up │
+    ├─────────────────────────────────────────────────────────┤
+    │ [HeroSection]                                           │
+    │  Headline: "AI-Powered Investment Advisory for India"    │
+    │  Subtext: "Get personalized stock & mutual fund advice"  │
+    │  CTA Button: "Get Started Free"                         │
+    │  Hero illustration/animation (financial chart graphic)   │
+    ├─────────────────────────────────────────────────────────┤
+    │ [FeaturesGrid]                                          │
+    │  4 cards in a 2x2 grid:                                 │
+    │  ┌──────────────┐ ┌──────────────┐                      │
+    │  │ 🤖 AI Advisor │ │ 📊 Screener  │                      │
+    │  │ Personal      │ │ 15+ filters  │                      │
+    │  │ allocation    │ │ ranked results│                     │
+    │  └──────────────┘ └──────────────┘                      │
+    │  ┌──────────────┐ ┌──────────────┐                      │
+    │  │ 🏆 Strategies │ │ 🏦 Mutual Funds│                    │
+    │  │ 5 curated     │ │ Active/Passive│                     │
+    │  │ portfolios    │ │ comparison    │                     │
+    │  └──────────────┘ └──────────────┘                      │
+    ├─────────────────────────────────────────────────────────┤
+    │ [HowItWorks]                                            │
+    │  Step 1: Create Profile → Step 2: Set Goals →            │
+    │  Step 3: Get AI Advice → Step 4: Track & Rebalance      │
+    ├─────────────────────────────────────────────────────────┤
+    │ [DisclaimerBanner]                                      │
+    │  "For educational purposes only. Not SEBI registered."   │
+    ├─────────────────────────────────────────────────────────┤
+    │ [Footer]                                                │
+    │  Links | Disclaimer | Data Sources | © 2026             │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 2: AUTH — LOGIN (/login)
+  Purpose: User login
+  Layout: Centered card on subtle gradient background
+  
+  Components:
+    ┌─────────────────────────────────────────┐
+    │           InvestIQ Logo                  │
+    │                                         │
+    │  ┌───────────────────────────────────┐  │
+    │  │  [LoginForm]                      │  │
+    │  │                                   │  │
+    │  │  Email:    [___________________]  │  │
+    │  │  Password: [___________________]  │  │
+    │  │                                   │  │
+    │  │  [  Login  ] (primary button)     │  │
+    │  │                                   │  │
+    │  │  ──────── OR ────────             │  │
+    │  │                                   │  │
+    │  │  [ G  Sign in with Google ]       │  │
+    │  │                                   │  │
+    │  │  Don't have an account? Sign Up   │  │
+    │  └───────────────────────────────────┘  │
+    └─────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 3: AUTH — REGISTER (/register)
+  Purpose: New user registration
+  Layout: Same centered card style as Login
+  
+  Components:
+    ┌───────────────────────────────────┐
+    │  [RegisterForm]                   │
+    │                                   │
+    │  Full Name: [_________________]   │
+    │  Email:     [_________________]   │
+    │  Password:  [_________________]   │
+    │  Confirm:   [_________________]   │
+    │                                   │
+    │  [  Create Account  ]             │
+    │                                   │
+    │  ──────── OR ────────             │
+    │                                   │
+    │  [ G  Sign up with Google ]       │
+    │                                   │
+    │  Already have an account? Login   │
+    └───────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 4: ONBOARDING — PROFILE SETUP (/onboarding)
+  Purpose: Collect user investment profile (first-time after register)
+  Layout: Multi-step wizard with progress bar
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [ProgressBar]                                          │
+    │  Step 1 ● ── Step 2 ○ ── Step 3 ○ ── Step 4 ○          │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                         │
+    │  STEP 1: Basic Info                                     │
+    │  ┌─────────────────────────────────────┐                │
+    │  │  Age: [___] years                   │                │
+    │  │  Annual Income: ₹ [___________]     │                │
+    │  │  Monthly Investment: ₹ [________]   │                │
+    │  └─────────────────────────────────────┘                │
+    │                                                         │
+    │  STEP 2: Investment Goals                               │
+    │  ┌─────────────────────────────────────┐                │
+    │  │  Select your goals (multi-select):   │               │
+    │  │  [🏠 Buy House]  [🎓 Education]      │               │
+    │  │  [🏖️ Retirement]  [💰 Wealth Build]   │              │
+    │  │  [🚗 Buy Car]    [🌍 Travel]          │              │
+    │  │                                      │               │
+    │  │  Time Horizon:                       │               │
+    │  │  ( ) Short (1-3 yr)                  │               │
+    │  │  ( ) Medium (3-10 yr)                │               │
+    │  │  (●) Long (10+ yr)                   │               │
+    │  └─────────────────────────────────────┘                │
+    │                                                         │
+    │  STEP 3: Risk Questionnaire                             │
+    │  ┌─────────────────────────────────────┐                │
+    │  │  [RiskQuestionCard]                  │               │
+    │  │  Q1: If your portfolio dropped 30%,  │               │
+    │  │      what would you do?              │               │
+    │  │  (a) Sell everything                 │               │
+    │  │  (b) Sell some                       │               │
+    │  │  (c) Hold and wait                   │               │
+    │  │  (d) Buy more!                       │               │
+    │  │                                      │               │
+    │  │  ... 10-15 questions                 │               │
+    │  └─────────────────────────────────────┘                │
+    │                                                         │
+    │  STEP 4: Investment Style                               │
+    │  ┌─────────────────────────────────────┐                │
+    │  │  How do you want to manage?          │               │
+    │  │                                      │               │
+    │  │  [ActiveCard]     [PassiveCard]       │              │
+    │  │  🎯 Active        🛋️ Passive           │             │
+    │  │  Pick individual  Index funds,        │              │
+    │  │  stocks & funds   set and forget      │              │
+    │  │                                       │              │
+    │  │  [HybridCard]                         │              │
+    │  │  ⚖️ Hybrid                             │             │
+    │  │  Core index + satellite active         │             │
+    │  │                                        │             │
+    │  │  Preferred Sectors (optional):         │             │
+    │  │  [IT] [Banking] [Pharma] [FMCG] ...   │             │
+    │  └─────────────────────────────────────┘                │
+    │                                                         │
+    │  [← Back]                        [Next →]               │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 5: DASHBOARD (/dashboard)
+  Purpose: Main hub after login. Overview of everything.
+  Layout: Sidebar navigation + main content area
+  
+  Components:
+    ┌───────┬─────────────────────────────────────────────────┐
+    │       │  [DashboardHeader]                              │
+    │  S    │  Good morning, {name}! | 📅 27 Mar 2026         │
+    │  I    ├─────────────────────────────────────────────────┤
+    │  D    │                                                 │
+    │  E    │  [MarketOverviewStrip]                          │
+    │  B    │  Nifty: 22,450 (+1.2%) | Sensex: 73,800 (+0.9%)│
+    │  A    │  VIX: 14.2 | Nifty PE: 22.5 (Fair)             │
+    │  R    │                                                 │
+    │       │  ┌───────────────────┐ ┌───────────────────┐    │
+    │  N    │  │ [AllocationCard]  │ │ [MarketMoodCard]  │    │
+    │  A    │  │ Your Recommended  │ │                   │    │
+    │  V    │  │ Allocation:       │ │ 😐 Neutral        │    │
+    │       │  │ [PieChart]        │ │ Nifty PE: 22.5    │    │
+    │  📊   │  │ Equity: 75%      │ │ Valuation: Fair   │    │
+    │  🤖   │  │ Debt: 15%        │ │ FII: Net Buyers   │    │
+    │  📈   │  │ Gold: 10%        │ │ Advice: SIP ✓     │    │
+    │  🏦   │  └───────────────────┘ └───────────────────┘    │
+    │  🏆   │                                                 │
+    │  📉   │  ┌───────────────────────────────────────────┐  │
+    │       │  │ [TopStrategiesPreview]                    │  │
+    │       │  │ Top picks from each strategy:              │  │
+    │       │  │                                            │  │
+    │       │  │ 🚀 Ten Bagger: XYZ Ltd (Score: 92)        │  │
+    │       │  │ 📈 Compounder: ABC Corp (Score: 88)       │  │
+    │       │  │ 💰 Dividend: PQR Ltd (Score: 85)          │  │
+    │       │  │                                            │  │
+    │       │  │ [View All Strategies →]                    │  │
+    │       │  └───────────────────────────────────────────┘  │
+    │       │                                                 │
+    │       │  ┌───────────────────────────────────────────┐  │
+    │       │  │ [RecommendedMFsPreview]                   │  │
+    │       │  │ Your style: Passive                        │  │
+    │       │  │                                            │  │
+    │       │  │ UTI Nifty 50 Index (Score: 95)            │  │
+    │       │  │ HDFC Nifty Next 50 (Score: 91)            │  │
+    │       │  │ Motilal Oswal S&P 500 (Score: 89)         │  │
+    │       │  │                                            │  │
+    │       │  │ [View All MF Picks →]                      │  │
+    │       │  └───────────────────────────────────────────┘  │
+    └───────┴─────────────────────────────────────────────────┘
+
+  SIDEBAR NAVIGATION:
+    📊 Dashboard (current)
+    🤖 AI Advisor
+    📈 Stock Screener
+    🏦 Mutual Funds
+    🏆 Strategies
+    📉 Backtest
+    ⚙️ Settings / Profile
+    🚪 Logout
+
+────────────────────────────────────────────────────────────────
+
+PAGE 6: AI ADVISOR (/advisor)
+  Purpose: Personalized investment advice
+  Layout: Split — left panel (allocation), right panel (AI chat)
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [PageHeader] AI Investment Advisor                      │
+    ├────────────────────────┬────────────────────────────────┤
+    │                        │                                │
+    │  [AllocationPanel]     │  [AIAdvicePanel]               │
+    │                        │                                │
+    │  Your Profile:         │  Based on your profile:        │
+    │  Age: 28               │                                │
+    │  Risk: High            │  [AIMessageBubble]             │
+    │  Goal: Retirement      │  "As a 28-year-old with high   │
+    │  Style: Passive        │   risk tolerance and a 22-year │
+    │  Horizon: Long         │   horizon, I recommend a       │
+    │                        │   growth-heavy portfolio..."   │
+    │  [Edit Profile →]      │                                │
+    │                        │  [AllocationBreakdown]         │
+    │  ┌──────────────────┐  │  Equity: 80%                   │
+    │  │ [PieChart]       │  │    ├ Large Cap: 35%            │
+    │  │                  │  │    ├ Mid Cap: 25%              │
+    │  │  Equity  80%     │  │    └ Small Cap: 20%            │
+    │  │  Debt    10%     │  │  Debt: 10%                     │
+    │  │  Gold    10%     │  │    └ PPF + Govt Bonds          │
+    │  │                  │  │  Gold: 10%                      │
+    │  └──────────────────┘  │    └ Sovereign Gold Bonds      │
+    │                        │                                │
+    │  [SIPProjection]       │  [MFRecommendations]           │
+    │  Monthly SIP: ₹50,000  │  For your passive style:       │
+    │  Target: Retire at 50  │  ┌──────────────────────────┐  │
+    │                        │  │ UTI Nifty 50 Index       │  │
+    │  [ProjectionChart]     │  │ Exp: 0.18% | 3yr: 15.2% │  │
+    │  Year 5:  ₹38L        │  │ Score: 95/100            │  │
+    │  Year 10: ₹1.1Cr      │  ├──────────────────────────┤  │
+    │  Year 15: ₹2.5Cr      │  │ HDFC Nifty Next 50       │  │
+    │  Year 22: ₹5.8Cr      │  │ Exp: 0.30% | 3yr: 18.5% │  │
+    │                        │  │ Score: 91/100            │  │
+    │                        │  └──────────────────────────┘  │
+    │                        │                                │
+    │                        │  [DirectVsRegular]             │
+    │                        │  "Choose Direct plans. You save│
+    │                        │   ₹18L over 20 years vs       │
+    │                        │   Regular plans."             │
+    └────────────────────────┴────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 7: STOCK SCREENER (/screener)
+  Purpose: Filter and discover stocks by fundamental criteria
+  Layout: Left sidebar (filters) + main area (results table)
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [PageHeader] Stock Screener                            │
+    │  [SavedQueryDropdown] My Saved Screens ▼                │
+    ├──────────────┬──────────────────────────────────────────┤
+    │              │                                          │
+    │  [FilterPanel] │  [ResultsTable]                        │
+    │              │                                          │
+    │  Sector:     │  Results: 45 stocks found                │
+    │  [Dropdown▼] │                                          │
+    │              │  ┌────┬───────┬────┬────┬────┬─────────┐│
+    │  Market Cap: │  │Rank│ Stock │ PE │ROE │EPS │ Score   ││
+    │  Min [____]  │  │    │       │    │    │Grth│         ││
+    │  Max [____]  │  ├────┼───────┼────┼────┼────┼─────────┤│
+    │              │  │ 1  │TCS    │28.5│45.2│22% │ 92/100  ││
+    │  PE Ratio:   │  │ 2  │Infosys│25.1│32.8│18% │ 88/100  ││
+    │  Min [____]  │  │ 3  │HDFC Bk│18.2│17.5│25% │ 85/100  ││
+    │  Max [____]  │  │ 4  │Asian P│15.8│28.3│32% │ 83/100  ││
+    │              │  │ ...│       │    │    │    │         ││
+    │  ROE:        │  └────┴───────┴────┴────┴────┴─────────┘│
+    │  Min [____]  │                                          │
+    │              │  [Pagination] ← 1 2 3 4 5 →              │
+    │  ROCE:       │                                          │
+    │  Min [____]  │  Click any row to expand:                │
+    │              │  ┌───────────────────────────────────────┐│
+    │  Debt/Equity:│  │ [StockDetailCard]                    ││
+    │  Max [____]  │  │ TCS — Tata Consultancy Services      ││
+    │              │  │                                       ││
+    │  EPS Growth: │  │ Sector: IT | MCap: ₹13.5L Cr        ││
+    │  3yr Min[__] │  │ PE: 28.5 | ROE: 45.2% | ROCE: 52%  ││
+    │              │  │ D/E: 0.02 | FCF: ₹38,000 Cr         ││
+    │  Revenue Grth│  │ Promoter: 72% | Pledge: 0%          ││
+    │  3yr Min[__] │  │ Dividend Yield: 1.2%                 ││
+    │              │  │                                       ││
+    │  Div Yield:  │  │ [ScoreBreakdown]                     ││
+    │  Min [____]  │  │ Quality: 95 | Growth: 78 | Value: 62││
+    │              │  │                                       ││
+    │  Promoter:   │  │ [AIExplanation]                      ││
+    │  Min [____]  │  │ "TCS scores high due to consistent   ││
+    │              │  │  ROE above 40% and zero debt..."      ││
+    │  Pledge:     │  └───────────────────────────────────────┘│
+    │  Max [____]  │                                          │
+    │              │                                          │
+    │  [Apply]     │                                          │
+    │  [Reset]     │                                          │
+    │  [Save Query]│                                          │
+    │  [Export CSV]│                                          │
+    └──────────────┴──────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 8: MUTUAL FUNDS (/mutual-funds)
+  Purpose: Browse, filter, compare, and get MF recommendations
+  Layout: Tabs at top → Browse / Compare / Overlap / My Picks
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [PageHeader] Mutual Fund Explorer                      │
+    │  [Tabs] Browse | Compare | Overlap Analysis | My Picks  │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                         │
+    │  TAB: Browse                                            │
+    │  ┌────────────────────┐                                 │
+    │  │ [StyleToggle]      │                                 │
+    │  │ (●) Active  ( ) Passive  ( ) All                    │
+    │  └────────────────────┘                                 │
+    │                                                         │
+    │  [FilterBar]                                            │
+    │  Category: [Large Cap ▼]  Plan: [Direct ▼]              │
+    │  Min Return 3yr: [__]  Max Expense: [__]                │
+    │  Min AUM: [__] Cr                                       │
+    │                                                         │
+    │  [MFResultsTable]                                       │
+    │  ┌────┬──────────────┬──────┬──────┬──────┬──────┬────┐│
+    │  │Rank│ Fund Name    │Exp % │3yr % │5yr % │Sharpe│Scor││
+    │  ├────┼──────────────┼──────┼──────┼──────┼──────┼────┤│
+    │  │ 1  │UTI Nifty 50  │0.18  │15.2  │14.8  │1.42  │ 95 ││
+    │  │ 2  │HDFC Index N50│0.20  │15.0  │14.6  │1.38  │ 93 ││
+    │  │ 3  │ICICI Pru N50 │0.18  │15.1  │14.7  │1.40  │ 92 ││
+    │  └────┴──────────────┴──────┴──────┴──────┴──────┴────┘│
+    │                                                         │
+    │  TAB: Compare (when selected)                           │
+    │  ┌─────────────────────────────────────────────────┐    │
+    │  │ [MFComparePanel]                                │    │
+    │  │ Select 2-4 funds to compare:                    │    │
+    │  │ Fund 1: [Search & select ▼]                     │    │
+    │  │ Fund 2: [Search & select ▼]                     │    │
+    │  │ Fund 3: [+ Add fund]                            │    │
+    │  │                                                 │    │
+    │  │ [CompareButton]                                 │    │
+    │  │                                                 │    │
+    │  │ [ComparisonTable]                               │    │
+    │  │              │ UTI Nifty 50 │ HDFC Index  │     │    │
+    │  │ ─────────────┼──────────────┼─────────────┤     │    │
+    │  │ Expense      │    0.18%     │    0.20%    │     │    │
+    │  │ Return 1yr   │    12.5%     │    12.3%    │     │    │
+    │  │ Return 3yr   │    15.2%     │    15.0%    │     │    │
+    │  │ Sharpe       │    1.42      │    1.38     │     │    │
+    │  │ AUM          │   ₹15,200 Cr │  ₹12,800 Cr│     │    │
+    │  │ Track Error  │    0.05%     │    0.08%    │     │    │
+    │  │                                                 │    │
+    │  │ [AIVerdict]                                     │    │
+    │  │ "UTI Nifty 50 has lower tracking error and      │    │
+    │  │  marginally better returns. Recommended."       │    │
+    │  └─────────────────────────────────────────────────┘    │
+    │                                                         │
+    │  TAB: Overlap Analysis (when selected)                  │
+    │  ┌─────────────────────────────────────────────────┐    │
+    │  │ [OverlapPanel]                                  │    │
+    │  │ Fund A: [Select ▼]   Fund B: [Select ▼]        │    │
+    │  │                                                 │    │
+    │  │ [OverlapResult]                                 │    │
+    │  │ Portfolio Overlap: 45.2%                         │    │
+    │  │ ⚠️ Moderate overlap detected                     │    │
+    │  │                                                 │    │
+    │  │ [VennDiagram] (visual overlap)                  │    │
+    │  │                                                 │    │
+    │  │ Common Stocks:                                  │    │
+    │  │ ┌────────────┬──────────┬──────────┐            │    │
+    │  │ │ Stock      │ Fund A % │ Fund B % │            │    │
+    │  │ ├────────────┼──────────┼──────────┤            │    │
+    │  │ │ HDFC Bank  │ 8.5%     │ 7.2%     │            │    │
+    │  │ │ Reliance   │ 7.1%     │ 9.3%     │            │    │
+    │  │ │ TCS        │ 5.8%     │ 4.2%     │            │    │
+    │  │ └────────────┴──────────┴──────────┘            │    │
+    │  └─────────────────────────────────────────────────┘    │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 9: STRATEGIES (/strategies)
+  Purpose: Browse curated investment strategies
+  Layout: Strategy cards → Click to see detail
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [PageHeader] Investment Strategies                      │
+    │  "AI-curated portfolios for different investment styles"  │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                         │
+    │  [StrategyCardGrid] (3 columns)                         │
+    │                                                         │
+    │  ┌─────────────────┐ ┌──────────────────┐ ┌──────────┐│
+    │  │ [StrategyCard]  │ │ [StrategyCard]   │ │[Strategy]││
+    │  │                 │ │                  │ │          ││
+    │  │ 🚀 Ten Baggers  │ │ 📈 Steady        │ │💰 Dividend││
+    │  │                 │ │    Compounders   │ │   Kings  ││
+    │  │ Risk: 🔴 HIGH   │ │ Risk: 🟢 LOW-MED │ │Risk: 🟢  ││
+    │  │ Horizon: 5-10yr │ │ Horizon: 3-7yr   │ │Hor: Long ││
+    │  │                 │ │                  │ │          ││
+    │  │ Top Pick:       │ │ Top Pick:        │ │Top Pick: ││
+    │  │ XYZ (Score: 92) │ │ ABC (Score: 88)  │ │PQR (85) ││
+    │  │                 │ │                  │ │          ││
+    │  │ [View →]        │ │ [View →]         │ │[View →]  ││
+    │  └─────────────────┘ └──────────────────┘ └──────────┘│
+    │                                                         │
+    │  ┌─────────────────┐ ┌──────────────────┐              │
+    │  │ [StrategyCard]  │ │ [StrategyCard]   │              │
+    │  │                 │ │                  │              │
+    │  │ 💎 GARP         │ │ 🔄 Turnaround    │              │
+    │  │   (Growth at    │ │    Plays         │              │
+    │  │    Reasonable   │ │                  │              │
+    │  │    Price)       │ │ Risk: 🔴 HIGH    │              │
+    │  │                 │ │ Horizon: 2-4yr   │              │
+    │  │ Risk: 🟡 MED    │ │                  │              │
+    │  │ Horizon: 3-5yr  │ │ Top Pick:        │              │
+    │  │                 │ │ DEF (Score: 80)  │              │
+    │  │ [View →]        │ │ [View →]         │              │
+    │  └─────────────────┘ └──────────────────┘              │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 10: STRATEGY DETAIL (/strategies/:name)
+  Purpose: View stocks & MFs picked by a specific strategy
+  Layout: Strategy info at top + ranked table + AI insights
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [StrategyHeader]                                       │
+    │  🚀 Ten Baggers Strategy                                │
+    │  "Small/mid cap companies with explosive growth"         │
+    │  Risk: 🔴 HIGH | Horizon: 5-10 years                    │
+    │  Last updated: 27 Mar 2026                              │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                         │
+    │  [ScreeningCriteria]                                    │
+    │  Market Cap: ₹500-10,000 Cr | Rev Growth: >20% CAGR    │
+    │  EPS Growth: >25% | ROE: >18% | D/E: <1                │
+    │  Promoter: >40% | Pledge: <5%                           │
+    │                                                         │
+    │  [StockPicksTable]                                      │
+    │  ┌────┬──────────┬──────┬──────┬──────┬──────┬────────┐│
+    │  │Rank│ Stock    │MCap  │RevGr │EPSGr │ ROE  │ Score  ││
+    │  ├────┼──────────┼──────┼──────┼──────┼──────┼────────┤│
+    │  │ 1  │ XYZ Ltd  │₹2,500│ 35%  │ 42%  │ 28%  │ 92     ││
+    │  │ 2  │ ABC Corp │₹4,200│ 28%  │ 35%  │ 25%  │ 88     ││
+    │  │ ...│          │      │      │      │      │        ││
+    │  └────┴──────────┴──────┴──────┴──────┴──────┴────────┘│
+    │                                                         │
+    │  [AIInsights]                                           │
+    │  "These companies show strong revenue growth momentum    │
+    │   with manageable debt levels. Key risks include..."     │
+    │                                                         │
+    │  [MFPicksForStrategy]                                   │
+    │  "If you prefer mutual funds for this strategy:"         │
+    │  ┌──────────────────────────────────────┐               │
+    │  │ Quant Small Cap Fund (Score: 88)     │               │
+    │  │ Nippon Small Cap Fund (Score: 85)    │               │
+    │  └──────────────────────────────────────┘               │
+    │                                                         │
+    │  [BacktestButton]                                       │
+    │  [ 📉 Backtest This Strategy → ]                        │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 11: BACKTESTING (/backtest)
+  Purpose: Run and view historical strategy backtests
+  Layout: Config form at top + results below
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [PageHeader] Strategy Backtester                       │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                         │
+    │  [BacktestConfigForm]                                   │
+    │  ┌─────────────────────────────────────────────────┐    │
+    │  │ Strategy: [Ten Baggers ▼]                       │    │
+    │  │ Period:   [5 Years ▼]  (1yr | 3yr | 5yr | 10yr)│    │
+    │  │ Initial:  ₹ [1,00,000]                          │    │
+    │  │ Rebalance: [Quarterly ▼]                        │    │
+    │  │                                                 │    │
+    │  │ [ 🚀 Run Backtest ]                             │    │
+    │  └─────────────────────────────────────────────────┘    │
+    │                                                         │
+    │  [BacktestResults] (shown after running)                │
+    │                                                         │
+    │  ┌───────────────────────────────────────────────────┐  │
+    │  │ [MetricsCards] (4 cards in a row)                 │  │
+    │  │                                                   │  │
+    │  │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐│  │
+    │  │ │ CAGR     │ │ Alpha    │ │ Max DD   │ │Sharpe ││  │
+    │  │ │ 37.2%    │ │ +22.4%   │ │ -32%     │ │ 1.8   ││  │
+    │  │ │ vs Nifty │ │ vs Nifty │ │ Mar 2020 │ │       ││  │
+    │  │ │ 14.8%    │ │          │ │          │ │       ││  │
+    │  │ └──────────┘ └──────────┘ └──────────┘ └───────┘│  │
+    │  └───────────────────────────────────────────────────┘  │
+    │                                                         │
+    │  ┌───────────────────────────────────────────────────┐  │
+    │  │ [EquityCurveChart]                               │  │
+    │  │                                                   │  │
+    │  │  ₹5L ┤                                    ╱ Strat │  │
+    │  │      │                                 ╱╱        │  │
+    │  │  ₹4L ┤                              ╱╱           │  │
+    │  │      │                           ╱╱              │  │
+    │  │  ₹3L ┤                        ╱╱                 │  │
+    │  │      │                  ╱───╱╱                    │  │
+    │  │  ₹2L ┤            ╱──╱╱   ╱── Nifty              │  │
+    │  │      │      ╱───╱╱  ╱──╱╱                        │  │
+    │  │  ₹1L ┤─╱──╱╱──╱──╱╱                             │  │
+    │  │      └────────────────────────────────────        │  │
+    │  │       2020   2021   2022   2023   2024   2025     │  │
+    │  └───────────────────────────────────────────────────┘  │
+    │                                                         │
+    │  ┌───────────────────────────────────────────────────┐  │
+    │  │ [PeriodBreakdownTable]                           │  │
+    │  │ Quarter    │ Stocks Held     │ Return │ Benchmark │  │
+    │  │ Q1 2020    │ XYZ, ABC, ...   │ -25%   │ -28%      │  │
+    │  │ Q2 2020    │ XYZ, DEF, ...   │ +45%   │ +32%      │  │
+    │  │ ...        │                 │        │           │  │
+    │  └───────────────────────────────────────────────────┘  │
+    │                                                         │
+    │  [DisclaimerBanner]                                     │
+    │  ⚠️ Past performance does not guarantee future results.  │
+    │  Survivorship bias may affect results.                   │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+PAGE 12: SETTINGS / PROFILE (/settings)
+  Purpose: Edit profile, change password, manage account
+  Layout: Tabbed settings page
+  
+  Components:
+    ┌─────────────────────────────────────────────────────────┐
+    │  [PageHeader] Settings                                  │
+    │  [Tabs] Profile | Security | Preferences                │
+    ├─────────────────────────────────────────────────────────┤
+    │                                                         │
+    │  TAB: Profile                                           │
+    │  ┌─────────────────────────────────────┐                │
+    │  │ [ProfileForm]                       │                │
+    │  │ Name: [________________]            │                │
+    │  │ Age: [___]                          │                │
+    │  │ Annual Income: ₹[___________]       │                │
+    │  │ Monthly Investment: ₹[________]     │                │
+    │  │ Risk Tolerance: [Medium ▼]          │                │
+    │  │ Goals: [✓Retirement] [✓House] [...]  │               │
+    │  │ Time Horizon: [Long ▼]              │                │
+    │  │ Management Style: [Passive ▼]       │                │
+    │  │ Sectors: [IT] [Banking] [+ Add]     │                │
+    │  │                                     │                │
+    │  │ [Save Changes]                      │                │
+    │  └─────────────────────────────────────┘                │
+    │                                                         │
+    │  TAB: Security                                          │
+    │  ┌─────────────────────────────────────┐                │
+    │  │ [ChangePasswordForm]                │                │
+    │  │ Current Password: [____________]    │                │
+    │  │ New Password:     [____________]    │                │
+    │  │ Confirm:          [____________]    │                │
+    │  │ [Update Password]                   │                │
+    │  │                                     │                │
+    │  │ Connected Accounts:                 │                │
+    │  │ Google: user@gmail.com ✓ Connected  │                │
+    │  └─────────────────────────────────────┘                │
+    │                                                         │
+    │  TAB: Preferences                                       │
+    │  ┌─────────────────────────────────────┐                │
+    │  │ Theme: ( ) Light (●) Dark           │                │
+    │  │ Currency: [INR ▼]                   │                │
+    │  │ Email Notifications: [Toggle ON]    │                │
+    │  └─────────────────────────────────────┘                │
+    └─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+
+SHARED / REUSABLE COMPONENTS LIST:
+───────────────────────────────────
+
+LAYOUT COMPONENTS:
+  [AppShell]          - Main layout with sidebar + header + content
+  [Sidebar]           - Navigation sidebar with icons + labels
+  [Header]            - Top bar with user avatar, notifications
+  [PageHeader]        - Page title + optional description
+  [Footer]            - Copyright, disclaimer, links
+
+NAVIGATION:
+  [Navbar]            - Landing page navbar (not logged in)
+  [SidebarNav]        - Dashboard sidebar (logged in)
+  [Breadcrumbs]       - Page location trail
+  [TabNavigation]     - Horizontal tabs for sub-pages
+
+DATA DISPLAY:
+  [DataTable]         - Sortable, paginated table (for stocks, MFs)
+  [StockRow]          - Single stock row with expandable detail
+  [MFRow]             - Single MF row with key metrics
+  [ScoreBadge]        - Circular score indicator (0-100, color-coded)
+  [RiskBadge]         - Risk level tag (🔴 HIGH, 🟡 MED, 🟢 LOW)
+  [MetricCard]        - Single metric display (label + value + trend)
+  [StatCard]          - Dashboard stat card with icon
+
+CHARTS:
+  [PieChart]          - Asset allocation breakdown
+  [LineChart]         - Equity curve, price history
+  [BarChart]          - Revenue/profit comparison
+  [AreaChart]         - SIP projection over time
+  [CandlestickChart]  - Stock price chart (optional, nice to have)
+  [HeatmapChart]      - Sector heatmap
+  [VennDiagram]       - MF overlap visualization
+
+FORMS:
+  [InputField]        - Text/number input with label + validation
+  [SelectDropdown]    - Dropdown select with search
+  [RangeSlider]       - Min-max range selector (for screener filters)
+  [MultiSelect]       - Multi-select chips (for sectors, goals)
+  [RadioGroup]        - Radio button group
+  [ToggleSwitch]      - Boolean toggle
+  [DatePicker]        - Date selection (for backtesting)
+  [SearchInput]       - Search with autocomplete (stock/MF search)
+
+FEEDBACK:
+  [LoadingSkeleton]   - Shimmer loading placeholder
+  [EmptyState]        - "No results found" with illustration
+  [ErrorState]        - "Something went wrong" with retry button
+  [Toast]             - Success/error notification popup
+  [ConfirmDialog]     - Confirmation modal
+
+AI COMPONENTS:
+  [AIMessageBubble]   - AI-generated text with typewriter effect
+  [AIExplanation]     - Collapsible AI explanation for a stock/MF
+  [AIVerdict]         - AI comparison summary
+
+SPECIALIZED:
+  [AllocationPieChart]    - Interactive allocation with labels
+  [SIPCalculator]         - Input amount → show projected corpus
+  [ComparisonTable]       - Side-by-side MF/stock comparison
+  [OverlapVisualizer]     - Venn diagram + common stocks table
+  [StrategyCard]          - Strategy summary card for grid
+  [BacktestConfig]        - Backtest parameter form
+  [EquityCurve]           - Strategy vs benchmark line chart
+  [RiskQuestionnaire]     - Interactive Q&A with progress
+  [ProfileWizard]         - Multi-step onboarding form
+  [MarketMoodIndicator]   - Gauge showing greedy/neutral/fearful
+  [MarketTicker]          - Scrolling strip with Nifty/Sensex/VIX
+  [DirectVsRegularCalc]   - Cost comparison calculator
+  [DisclaimerBanner]      - Sticky disclaimer bar
+
+────────────────────────────────────────────────────────────────
+
+COLOR PALETTE SUGGESTION (for Figma):
+
+  Primary:    #2563EB (Blue — trust, finance)
+  Secondary:  #7C3AED (Purple — AI, intelligence)
+  Success:    #16A34A (Green — gains, positive)
+  Danger:     #DC2626 (Red — losses, warnings)
+  Warning:    #F59E0B (Amber — caution)
+  Background: #F8FAFC (Light gray)
+  Dark BG:    #0F172A (For dark mode)
+  Card BG:    #FFFFFF (White cards)
+  Text:       #1E293B (Dark slate)
+  Muted:      #94A3B8 (Gray text)
+
+TYPOGRAPHY:
+  Headings:   Inter or Plus Jakarta Sans (bold)
+  Body:       Inter (regular)
+  Numbers:    JetBrains Mono or Tabular Lining (for financial data)
+  
+SPACING:
+  Base unit: 4px
+  Card padding: 24px
+  Section gap: 32px
+  Sidebar width: 240px (expanded), 64px (collapsed)
+
+================================================================================
+20. PHASED DELIVERY PLAN
+================================================================================
+
+Each phase delivers a DEPLOYABLE, DEMO-ABLE product.
+
+────────────────────────────────────────────────────────────────
+PHASE 1: FOUNDATION + MARKET DATA (Week 1-2)
+────────────────────────────────────────────────────────────────
+
+  Demo: "REST API serving Indian stock data with sub-100ms 
+  cached responses + basic market overview UI."
+
+  Backend:
+    - FastAPI scaffold + Docker Compose (PostgreSQL + Redis)
+    - DB schema + Alembic migrations
+    - Data providers: yfinance, nse-py, mftool, AMFI parser
+    - Redis caching layer + Request coalescing module
+    - Nightly ETL pipeline (EOD data for top 500 stocks)
+    - Endpoints: /market/indices, /market/stock/:symbol,
+      /market/stock/:symbol/price, /market/indicators
+    - Swagger docs + Health check + Structured logging
+
+  Frontend:
+    - Next.js scaffold (TypeScript + Tailwind)
+    - Landing page + Market overview page (ticker, gainers/losers)
+    - AppShell layout + LoadingSkeleton + ErrorState
+
+  Deploy: Render (backend) + Vercel (frontend) + Supabase (DB)
+          + Upstash (Redis) — all free tier
+
+  Checklist:
+    [] Docker Compose runs locally with one command
+    [] /market/stock/TCS.NS returns cached data
+    [] Landing + Market overview pages show real data
+    [] Deployed and accessible via public URL
+
+────────────────────────────────────────────────────────────────
+PHASE 2: AUTH + PROFILE + STOCK SCREENER (Week 3-4)
+────────────────────────────────────────────────────────────────
+
+  Demo: "Users sign up (email or Google), complete risk profile,
+  and screen stocks with 15+ filters. Scored, ranked, cached."
+
+  Backend:
+    - Auth: JWT (access 15min + refresh 7day), Google OAuth, bcrypt
+    - User profile + risk questionnaire scoring
+    - Stock screener: 15+ filters, sector filtering, composite
+      scoring (percentile-based), pagination, Redis caching
+    - Rate limiting (per-user, per-endpoint)
+    - Endpoints: /auth/*, /profile, /profile/risk-assessment,
+      /screener/stocks, /screener/filters, /screener/save
+
+  Frontend:
+    - Login + Register pages (email + Google OAuth)
+    - Onboarding wizard (4 steps: info, goals, risk quiz, style)
+    - Stock screener page (filter sidebar, DataTable, ScoreBadge)
+    - Auth state (Zustand + httpOnly cookies) + Protected routes
+
+  Checklist:
+    [] Register with email and Google works
+    [] JWT auth with refresh token rotation
+    [] Risk questionnaire → score (1-100)
+    [] Screener returns ranked stocks with composite scores
+    [] Same filter query = instant (cached)
+    [] Rate limiting active
+
+────────────────────────────────────────────────────────────────
+PHASE 3: AI ADVISOR + MUTUAL FUND MODULE (Week 5-7)
+────────────────────────────────────────────────────────────────
+
+  Demo: "AI generates personalized investment advice with MF 
+  picks. Active/passive/hybrid styles. MF comparison + overlap."
+
+  Backend:
+    - AI Gateway: Gemini (primary) → Groq (fallback) → Ollama
+      (offline). Provider abstraction + response caching.
+    - Advisory engine: age-based allocation, goal-based planning,
+      SIP projections, market-condition adjustment (Nifty PE, VIX)
+    - MF module: AMFI data pipeline, MF screener, active/passive
+      scoring, comparison engine, overlap detector, SIP vs Lumpsum
+      advisor, Direct vs Regular calculator, Core-Satellite builder
+    - Enhanced nightly ETL (add MF data sync)
+    - Endpoints: /advisor/allocation, /advisor/mutual-funds,
+      /advisor/sip-plan, /advisor/market-outlook,
+      /screener/mutual-funds, /screener/mf-compare,
+      /screener/mf-overlap
+
+  Frontend:
+    - Personal Advisor page (allocation pie chart, AI advice panel,
+      SIP projection chart, recommended MFs with scores)
+    - MF screener page (active/passive toggle, category filter,
+      comparison table, overlap Venn diagram)
+    - MF detail cards with expense ratio, returns, Sharpe
+
+  Checklist:
+    [] AI advice generates in <5 seconds
+    [] Failover works: disable Gemini → Groq kicks in
+    [] MF recommendations differ for active vs passive users
+    [] MF overlap detection flags >60% common holdings
+    [] SIP vs Lumpsum changes recommendation based on Nifty PE
+
+────────────────────────────────────────────────────────────────
+PHASE 4: STRATEGIES + BACKTESTING (Week 8-10)
+────────────────────────────────────────────────────────────────
+
+  Demo: "Choose from 5 strategies, each showing top scored stocks.
+  Backtest any strategy over 1-10 years vs Nifty 50 benchmark."
+
+  Backend:
+    - Strategy engine: Ten Baggers, Steady Compounders, Dividend
+      Kings, GARP, Turnaround Plays — each with scoring weights.
+      AI explanation for each pick. Nightly auto-refresh.
+    - Backtesting engine: historical simulation, quarterly
+      rebalance, CAGR/Sharpe/drawdown/alpha metrics,
+      benchmark comparison, equity curve generation
+    - Endpoints: /strategies, /strategies/:name,
+      /backtest/run, /backtest/results/:id
+    - Saved screener queries
+
+  Frontend:
+    - Strategies listing page (cards with risk level badges)
+    - Strategy detail page (top stocks table, AI reasoning,
+      "Backtest This" button)
+    - Backtest results page (equity curve chart, metrics cards,
+      period-wise breakdown table)
+    - Disclaimer banners on all pages
+
+  Checklist:
+    [] All 5 strategies return scored & ranked stocks
+    [] Backtest produces CAGR, Sharpe, max drawdown, alpha
+    [] Equity curve chart renders with strategy vs Nifty
+    [] All deployed and working
+
+────────────────────────────────────────────────────────────────
+PHASE 5: POLISH + PRODUCTION READINESS (Week 11-12)
+────────────────────────────────────────────────────────────────
+
+  Demo: "Production-quality, fully tested, polished platform
+  ready for portfolio showcase."
+
+  Backend:
+    - Error handling: global handler, structured JSON logging,
+      correlation IDs for request tracing
+    - Testing: unit tests (scoring, allocation), integration
+      tests (API endpoints), edge cases
+    - Performance: DB query optimization (EXPLAIN ANALYZE),
+      Redis pipeline for bulk ops, gzip compression
+    - Health monitoring endpoint with dependency checks
+
+  Frontend:
+    - Loading skeletons, error states, empty states on all pages
+    - Responsive design (mobile-friendly, web-first)
+    - Dark mode toggle
+    - Animations (Framer Motion for page transitions)
+    - SEO meta tags on landing page
+    - Sector heatmap + FII/DII tracker (bonus features)
+    - Export screener results to CSV
+
+  Checklist:
+    [] All unit + integration tests passing
+    [] Lighthouse score >80 on landing page
+    [] Dark mode works across all pages
+    [] README with architecture diagram + setup guide
+    [] Final deploy with custom domain (optional)
+
+================================================================================
+21. RISKS & MITIGATION
+================================================================================
+
+Risk                          | Impact | Mitigation
+──────────────────────────────┼────────┼─────────────────────────────
+yfinance rate-limited/blocked | No     | Nightly ETL + 24hr cache.
+                              | stock  | Fallback to jugaad-data
+                              | data   | library.
+──────────────────────────────┼────────┼─────────────────────────────
+Gemini free tier rate limit   | No AI  | Auto-failover to Groq →
+                              | advice | Ollama. 1M tokens/day is
+                              |        | generous for POC.
+──────────────────────────────┼────────┼─────────────────────────────
+AMFI website format changes   | No MF  | Abstract data provider.
+                              | data   | Easy to fix parser.
+──────────────────────────────┼────────┼─────────────────────────────
+Stale financial data          | Wrong  | Show "last updated" date.
+                              | advice | Nightly ETL refresh.
+──────────────────────────────┼────────┼─────────────────────────────
+SEBI compliance concerns      | Legal  | Disclaimers everywhere.
+                              |        | Never say "buy" / "sell".
+                              |        | Frame as educational.
+──────────────────────────────┼────────┼─────────────────────────────
+PostgreSQL free tier storage  | Can't  | Store only last 5yr prices.
+limit (500MB on Supabase)     | store  | Aggregate older data.
+                              | more   |
+──────────────────────────────┼────────┼─────────────────────────────
+Redis free tier memory (30MB  | Cache  | Cache only hot data (top
+on Upstash)                   | evict  | 500 stocks, popular MFs).
+                              |        | Short TTLs on low-value data.
+
+================================================================================
+22. DESIGN DECISION LOG (INTERVIEW READY)
+================================================================================
+
+These are the key technical decisions and the reasoning behind each.
+Use these as talking points in interviews and portfolio reviews.
+
+Decision 1: Python (FastAPI) over Node.js (NestJS)
+  Why: 80% of backend is data processing + AI integration.
+  Finance libraries (yfinance, pandas, nse-py, mftool, backtrader)
+  exist ONLY in Python. Node.js would require wrapping Python or
+  reimplementing what pandas already does.
+
+Decision 2: Monolith over Microservices
+  Why: POC stage — ship fast, debug easily. Logical separation via
+  modules (auth, advisor, screener, data). Can extract services later
+  when scaling demands it. Premature microservices = wasted effort.
+
+Decision 3: Multi-provider AI Gateway with Failover
+  Why: Cost optimization (Gemini free → Groq free → Ollama local).
+  Provider-agnostic abstraction means swapping AI providers requires
+  zero business logic changes. Shows resilience thinking.
+
+Decision 4: Nightly ETL Pipeline over Real-time Streaming
+  Why: Free APIs don't support WebSocket/streaming. EOD data is
+  sufficient for fundamental analysis (PE, ROE don't change intraday).
+  Pre-fetching at market close means ZERO external API calls during
+  peak user hours.
+
+Decision 5: Request Coalescing (Singleflight Pattern)
+  Why: If 100 users request the same stock simultaneously, only 1
+  external API call is made. Others await the same future/promise.
+  Reduces external API costs by up to 99%. Same pattern used by
+  Go's singleflight package and CDNs like Cloudflare.
+
+Decision 6: Multi-layer Cache (Redis + PostgreSQL + API)
+  Why: Redis (hot, <10ms) → PostgreSQL (warm, <50ms) → External API
+  (cold, <2s). 95% of requests served from cache. Cache-aside pattern
+  with TTL-based invalidation. Handles thundering herd via coalescing.
+
+Decision 7: PostgreSQL over MongoDB/NoSQL
+  Why: Financial data is inherently relational (stocks belong to
+  sectors, MFs belong to AMCs, users have portfolios with holdings).
+  Need ACID guarantees for user financial data. Free on Supabase.
+
+Decision 8: Composite Scoring over Simple Pass/Fail Filtering
+  Why: A stock with ROE 14.8% shouldn't be excluded when filter is
+  ROE > 15%. Percentile-based scoring gives a 0-100 score. Multiple
+  factors weighted per strategy. More nuanced than binary filtering.
+
+Decision 9: JWT (Access + Refresh) with httpOnly Cookies
+  Why: Access token (15min) in memory for API calls. Refresh token
+  (7 days) in httpOnly cookie prevents XSS theft. Refresh rotation
+  prevents replay attacks. Stateless = horizontally scalable.
+
+Decision 10: Active vs Passive MF Scoring with Different Weights
+  Why: Active funds should be scored on alpha, consistency, fund
+  manager tenure. Passive funds should be scored on tracking error
+  and expense ratio (the ONLY things that matter for index funds).
+  One scoring model cannot serve both styles.
+
+================================================================================
+                              END OF DOCUMENT
+================================================================================
