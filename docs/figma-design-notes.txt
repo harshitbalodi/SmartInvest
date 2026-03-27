@@ -8,13 +8,13 @@ PAGE INVENTORY:
 ──────────────
 
 PAGE 1: LANDING PAGE (/)
-  Purpose: Introduce InvestIQ, convert visitors to sign-ups
+  Purpose: Introduce SmartInvest, convert visitors to sign-ups
   Layout: Full-width, sections scroll vertically
   
   Components:
     ┌─────────────────────────────────────────────────────────┐
     │ [Navbar]                                                │
-    │  Logo (InvestIQ) | Features | Pricing | Login | Sign Up │
+    │  Logo (SmartInvest) | Features | Pricing | Login | Sign Up │
     ├─────────────────────────────────────────────────────────┤
     │ [HeroSection]                                           │
     │  Headline: "AI-Powered Investment Advisory for India"    │
@@ -54,7 +54,7 @@ PAGE 2: AUTH — LOGIN (/login)
   
   Components:
     ┌─────────────────────────────────────────┐
-    │           InvestIQ Logo                  │
+    │           SmartInvest Logo                  │
     │                                         │
     │  ┌───────────────────────────────────┐  │
     │  │  [LoginForm]                      │  │

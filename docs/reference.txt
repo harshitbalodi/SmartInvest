@@ -1,5 +1,5 @@
 ================================================================================
-                         INVESTIQ — SYSTEM DESIGN DOCUMENT
+                         SmartInvest — SYSTEM DESIGN DOCUMENT
                               Version 1.0 | March 2026
 ================================================================================
 
@@ -32,19 +32,19 @@ TABLE OF CONTENTS
 1. PRODUCT VISION & OVERVIEW
 ================================================================================
 
-InvestIQ is an AI-powered investment advisory platform for the Indian market.
+SmartInvest is an AI-powered investment advisory platform for the Indian market.
 
 Target User: Indian retail investors (ages 20-60) who want data-driven 
 investment guidance without paying for expensive advisory services.
 
-What InvestIQ Does:
+What SmartInvest Does:
   - Personalized asset allocation advice based on user profile (age, goals, risk)
   - Smart stock screener with 15+ fundamental filters
   - Curated portfolio strategies (10-baggers, dividend kings, compounders)
   - Mutual fund recommendations (active vs passive management)
   - Historical backtesting of strategies with benchmark comparison
 
-What InvestIQ Does NOT Do:
+What SmartInvest Does NOT Do:
   - Execute trades (information only)
   - Guarantee returns (educational tool)
   - Replace SEBI-registered advisors (always show disclaimers)
@@ -511,7 +511,7 @@ HIGH-LEVEL ARCHITECTURE:
 
 BACKEND FOLDER STRUCTURE:
 
-investiq/
+SmartInvest/
 ├── backend/
 │   ├── main.py                      # FastAPI entry point
 │   ├── config.py                    # Environment config
@@ -1350,13 +1350,13 @@ PAGE INVENTORY:
 ──────────────
 
 PAGE 1: LANDING PAGE (/)
-  Purpose: Introduce InvestIQ, convert visitors to sign-ups
+  Purpose: Introduce SmartInvest, convert visitors to sign-ups
   Layout: Full-width, sections scroll vertically
   
   Components:
     ┌─────────────────────────────────────────────────────────┐
     │ [Navbar]                                                │
-    │  Logo (InvestIQ) | Features | Pricing | Login | Sign Up │
+    │  Logo (SmartInvest) | Features | Pricing | Login | Sign Up │
     ├─────────────────────────────────────────────────────────┤
     │ [HeroSection]                                           │
     │  Headline: "AI-Powered Investment Advisory for India"    │
@@ -1396,7 +1396,7 @@ PAGE 2: AUTH — LOGIN (/login)
   
   Components:
     ┌─────────────────────────────────────────┐
-    │           InvestIQ Logo                  │
+    │           SmartInvest Logo                  │
     │                                         │
     │  ┌───────────────────────────────────┐  │
     │  │  [LoginForm]                      │  │
